@@ -1,0 +1,64 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Sensor {
+  locationId  Int      @id @default(autoincrement()) @map("location_id")
+  sensorName  String   @map("sensor_name") @db.VarChar(191)
+  latitude    Float
+  longitude   Float
+  status      String   @default("A") @db.VarChar(20)
+  direction1  String?  @map("direction_1") @db.VarChar(100)
+  direction2  String?  @map("direction_2") @db.VarChar(100)
+  installedAt DateTime? @map("installed_at")
+
+  realtimeCounts   RealtimeCount[]
+  pedestrianCounts PedestrianCount[]
+
+  @@map("sensors")
+}
+
+model RealtimeCount {
+  id               Int      @id @default(autoincrement())
+  sensorId         Int      @map("sensor_id")
+  sensingTime      DateTime @map("sensing_time")
+  totalCount       Int      @map("total_count")
+  direction1Count  Int      @default(0) @map("direction_1_count")
+  direction2Count  Int      @default(0) @map("direction_2_count")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  sensor Sensor @relation(fields: [sensorId], references: [locationId])
+
+  @@index([sensorId, sensingTime])
+  @@map("realtime_counts")
+}
+
+model PedestrianCount {
+  id               Int      @id @default(autoincrement())
+  sensorId         Int      @map("sensor_id")
+  countDate        DateTime @map("count_date") @db.Date
+  hourOfDay        Int      @map("hour_of_day")
+  pedestrianCount  Int      @map("pedestrian_count")
+
+  sensor Sensor @relation(fields: [sensorId], references: [locationId])
+
+  @@index([sensorId, hourOfDay])
+  @@map("pedestrian_counts")
+}
+
+model QuietSpace {
+  id           Int     @id @default(autoincrement())
+  featureName  String  @map("feature_name") @db.VarChar(191)
+  theme        String  @db.VarChar(100)
+  subTheme     String? @map("sub_theme") @db.VarChar(100)
+  latitude     Float
+  longitude    Float
+  address      String? @db.VarChar(255)
+
+  @@map("quiet_spaces")
+}

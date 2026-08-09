@@ -72,16 +72,20 @@ export async function planDualRoutes(
     getCurrentDensityPerSensor(),
   ]);
 
-  const scored = alternatives.map((r) => ({
+  const baseAlternatives = alternatives.length > 1 ? alternatives : [alternatives[0]];
+
+  const scored = baseAlternatives.map((r) => ({
     raw: r,
     score: scoreRouteSensoryLoad(r.geometry.coordinates, densities).score,
   }));
 
-  const fastestRaw = alternatives.reduce((a, b) => (a.durationSeconds <= b.durationSeconds ? a : b));
+  const fastestEntry = scored.reduce((a, b) => (a.raw.durationSeconds <= b.raw.durationSeconds ? a : b));
+  const fastestRaw = fastestEntry.raw;
   const quietestEntry = scored.reduce((a, b) => (a.score <= b.score ? a : b));
+  const quietestCandidateRaw = baseAlternatives.length > 1 ? quietestEntry.raw : fastestRaw;
 
   const fastest = toScoredRoute("fastest", fastestRaw, densities, highSensoryScoreThreshold);
-  const quietest = toScoredRoute("quietest", quietestEntry.raw, densities, highSensoryScoreThreshold);
+  const quietest = toScoredRoute("quietest", quietestCandidateRaw, densities, highSensoryScoreThreshold);
 
   const overThreshold = quietest.hotspots.filter((h) => h.count >= crowdAlertThreshold);
   const crowdAlert = {
@@ -98,8 +102,9 @@ export async function planDualRoutes(
     quietest,
     crowdAlert,
     identicalPaths:
-      fastestRaw.geometry.coordinates.length === quietestEntry.raw.geometry.coordinates.length &&
-      fastestRaw.distanceMeters === quietestEntry.raw.distanceMeters,
+      baseAlternatives.length <= 1 ||
+      (fastestRaw.geometry.coordinates.length === quietestCandidateRaw.geometry.coordinates.length &&
+        fastestRaw.distanceMeters === quietestCandidateRaw.distanceMeters),
     sensitivity,
   };
 }

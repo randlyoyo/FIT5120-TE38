@@ -95,7 +95,7 @@ export function MapView() {
       <ClickToSetPoint onPick={handleMapPick} />
       <RecenterControl userLocation={userLocation} />
 
-      <MarkersLayer sensors={sensors} quietSpaces={quietSpaces} showSensors={showSensors} />
+      <MarkersLayer sensors={sensors} quietSpaces={quietSpaces} showSensors={showSensors} heatmapPoints={heatmapPoints} />
       <SensoryFieldLayer points={heatmapPoints} visible={showHeatmap} />
       <RouteLayer routes={routes} />
 

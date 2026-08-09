@@ -79,7 +79,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [initError, setInitError] = useState<string | null>(null);
 
   const [showHeatmap, setShowHeatmap] = useState(true);
-  const [showSensors, setShowSensors] = useState(false);
+  const [showSensors, setShowSensors] = useState(true);
   const [sensitivity, setSensitivityState] = useState<SensitivityLevel>(loadStoredSensitivity);
 
   const [start, setStartPoint] = useState<LatLon | null>(null);

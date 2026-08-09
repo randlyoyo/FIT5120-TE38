@@ -1,7 +1,5 @@
 import { PrismaClient } from "@prisma/client";
 
-const prisma = new PrismaClient();
-
 // Real City of Melbourne pedestrian sensor names/approximate locations (data.melbourne.vic.gov.au
 // "Pedestrian Counting System - Sensor Locations"). Seeded directly so the app is demoable without
 // depending on the live open-data API being reachable; dataSyncService can refresh/extend this later.
@@ -44,79 +42,105 @@ function jitter(base: number): number {
   return Math.max(0, Math.round(base + (Math.random() * 2 - 1) * variance));
 }
 
-async function main() {
-  console.log("Seeding sensors...");
-  for (const s of SENSORS) {
-    await prisma.sensor.upsert({
-      where: { locationId: s.locationId },
-      update: s,
-      create: { ...s, status: "A" },
-    });
+export async function seedFallbackData(prisma: PrismaClient) {
+  const sensorCount = await prisma.sensor.count();
+  if (sensorCount === 0) {
+    console.log("Seeding sensors...");
+    for (const s of SENSORS) {
+      await prisma.sensor.upsert({
+        where: { locationId: s.locationId },
+        update: s,
+        create: { ...s, status: "A" },
+      });
+    }
   }
 
-  console.log("Seeding quiet spaces...");
-  await prisma.quietSpace.deleteMany({});
-  await prisma.quietSpace.createMany({ data: QUIET_SPACES });
-
-  console.log("Seeding 14 days of historical hourly counts...");
-  await prisma.pedestrianCount.deleteMany({});
-  const historicalRows: {
-    sensorId: number;
-    countDate: Date;
-    hourOfDay: number;
-    pedestrianCount: number;
-  }[] = [];
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  for (let daysAgo = 1; daysAgo <= 14; daysAgo++) {
-    const date = new Date(today);
-    date.setDate(date.getDate() - daysAgo);
-    const isWeekend = date.getDay() === 0 || date.getDay() === 6;
-
-    for (const sensor of SENSORS) {
-      for (let hour = 0; hour < 24; hour++) {
-        const base = hourlyBaseCount(hour) * (isWeekend ? 0.55 : 1);
-        historicalRows.push({
-          sensorId: sensor.locationId,
-          countDate: date,
-          hourOfDay: hour,
-          pedestrianCount: jitter(base),
+  const quietSpaceCount = await prisma.quietSpace.count();
+  if (quietSpaceCount === 0) {
+    console.log("Seeding quiet spaces...");
+    for (const space of QUIET_SPACES) {
+      const existing = await prisma.quietSpace.findFirst({ where: { featureName: space.featureName } });
+      if (existing) {
+        await prisma.quietSpace.update({
+          where: { id: existing.id },
+          data: space,
         });
+      } else {
+        await prisma.quietSpace.create({ data: space });
       }
     }
   }
-  // MySQL createMany in chunks to avoid oversized statements.
-  const chunkSize = 500;
-  for (let i = 0; i < historicalRows.length; i += chunkSize) {
-    await prisma.pedestrianCount.createMany({ data: historicalRows.slice(i, i + chunkSize) });
+
+  const historicalCount = await prisma.pedestrianCount.count();
+  if (historicalCount === 0) {
+    console.log("Seeding 14 days of historical hourly counts...");
+    const historicalRows: {
+      sensorId: number;
+      countDate: Date;
+      hourOfDay: number;
+      pedestrianCount: number;
+    }[] = [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    for (let daysAgo = 1; daysAgo <= 14; daysAgo++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - daysAgo);
+      const isWeekend = date.getDay() === 0 || date.getDay() === 6;
+
+      for (const sensor of SENSORS) {
+        for (let hour = 0; hour < 24; hour++) {
+          const base = hourlyBaseCount(hour) * (isWeekend ? 0.55 : 1);
+          historicalRows.push({
+            sensorId: sensor.locationId,
+            countDate: date,
+            hourOfDay: hour,
+            pedestrianCount: jitter(base),
+          });
+        }
+      }
+    }
+
+    const chunkSize = 500;
+    for (let i = 0; i < historicalRows.length; i += chunkSize) {
+      await prisma.pedestrianCount.createMany({ data: historicalRows.slice(i, i + chunkSize) });
+    }
   }
 
-  console.log("Seeding current-hour realtime counts...");
-  await prisma.realtimeCount.deleteMany({});
-  const now = new Date();
-  const currentHour = now.getHours();
-  const realtimeRows = SENSORS.map((sensor) => {
-    const total = jitter(hourlyBaseCount(currentHour));
-    const d1 = Math.round(total * 0.55);
-    return {
-      sensorId: sensor.locationId,
-      sensingTime: now,
-      totalCount: total,
-      direction1Count: d1,
-      direction2Count: total - d1,
-    };
-  });
-  await prisma.realtimeCount.createMany({ data: realtimeRows });
-
-  console.log("Seed complete.");
+  const realtimeCount = await prisma.realtimeCount.count();
+  if (realtimeCount === 0) {
+    console.log("Seeding current-hour realtime counts...");
+    const now = new Date();
+    const currentHour = now.getHours();
+    const realtimeRows = SENSORS.map((sensor) => {
+      const total = jitter(hourlyBaseCount(currentHour));
+      const d1 = Math.round(total * 0.55);
+      return {
+        sensorId: sensor.locationId,
+        sensingTime: now,
+        totalCount: total,
+        direction1Count: d1,
+        direction2Count: total - d1,
+      };
+    });
+    await prisma.realtimeCount.createMany({ data: realtimeRows });
+  }
 }
 
-main()
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  })
-  .finally(async () => {
+async function main() {
+  const prisma = new PrismaClient();
+  try {
+    await seedFallbackData(prisma);
+    console.log("Seed complete.");
+  } finally {
     await prisma.$disconnect();
-  });
+  }
+}
+
+if (require.main === module) {
+  main()
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

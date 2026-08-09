@@ -6,6 +6,7 @@ import type {
   PredictiveAlert,
   QuietSpace,
   Sensor,
+  SensitivityLevel,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
@@ -27,13 +28,18 @@ export async function fetchHeatmap(): Promise<HeatmapPoint[]> {
   return data;
 }
 
-export async function fetchDualRoutes(start: LatLon, end: LatLon): Promise<DualRouteResult> {
+export async function fetchDualRoutes(
+  start: LatLon,
+  end: LatLon,
+  sensitivity: SensitivityLevel
+): Promise<DualRouteResult> {
   const { data } = await client.get<DualRouteResult>("/route", {
     params: {
       startLat: start.lat,
       startLon: start.lon,
       endLat: end.lat,
       endLon: end.lon,
+      sensitivity,
     },
   });
   return data;

@@ -1,4 +1,5 @@
 import axios from "axios";
+import { OsrmStep } from "./instructionFormatter";
 
 const OSRM_BASE_URL = process.env.OSRM_BASE_URL ?? "https://router.project-osrm.org";
 
@@ -6,6 +7,7 @@ export interface OsrmRoute {
   distanceMeters: number;
   durationSeconds: number;
   geometry: { type: "LineString"; coordinates: [number, number][] };
+  steps: OsrmStep[];
 }
 
 /**
@@ -26,7 +28,7 @@ export async function getRouteAlternatives(
       alternatives: true,
       overview: "full",
       geometries: "geojson",
-      steps: false,
+      steps: true,
     },
     timeout: 8000,
   });
@@ -39,5 +41,7 @@ export async function getRouteAlternatives(
     distanceMeters: r.distance,
     durationSeconds: r.duration,
     geometry: r.geometry,
+    // A walking A-to-B request has exactly one leg; flatten its steps for turn-by-turn directions.
+    steps: (r.legs ?? []).flatMap((leg: any) => leg.steps ?? []),
   }));
 }

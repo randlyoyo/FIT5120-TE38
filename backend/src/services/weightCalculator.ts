@@ -10,8 +10,6 @@ export interface SensorDensity {
   isHistorical: boolean;
 }
 
-const CROWD_ALERT_THRESHOLD = Number(process.env.CROWD_ALERT_THRESHOLD ?? 100);
-
 /**
  * Current pedestrian density per sensor: latest realtime_counts row (last 30 min)
  * falling back to the historical average for the current weekday+hour when no

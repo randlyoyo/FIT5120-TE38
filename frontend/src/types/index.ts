@@ -36,6 +36,16 @@ export interface SensorHotspot {
   isHistorical: boolean;
 }
 
+export interface NavigationStep {
+  instruction: string;
+  streetName: string;
+  distanceMeters: number;
+  durationSeconds: number;
+  maneuverType: string;
+  modifier: string | null;
+  location: [number, number];
+}
+
 export interface ScoredRoute {
   mode: "fastest" | "quietest";
   distanceMeters: number;
@@ -44,13 +54,17 @@ export interface ScoredRoute {
   sensoryScore: number;
   sensoryLevel: SensoryLevel;
   hotspots: SensorHotspot[];
+  steps: NavigationStep[];
 }
+
+export type SensitivityLevel = "low" | "medium" | "high";
 
 export interface DualRouteResult {
   fastest: ScoredRoute;
   quietest: ScoredRoute;
   crowdAlert: { triggered: boolean; message?: string; hotspots: SensorHotspot[] };
   identicalPaths: boolean;
+  sensitivity: SensitivityLevel;
 }
 
 export interface PredictiveAlert {
@@ -65,6 +79,12 @@ export interface PredictiveAlert {
 }
 
 export interface LatLon {
+  lat: number;
+  lon: number;
+}
+
+export interface PlaceSuggestion {
+  label: string;
   lat: number;
   lon: number;
 }

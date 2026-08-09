@@ -1,3 +1,4 @@
+import { AlertTriangle, Info, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 interface Props {
@@ -22,9 +23,11 @@ export function AlertBanner({ message, tone = "warning", onDismiss }: Props) {
 
   if (!message || !visible) return null;
 
+  const Icon = tone === "warning" ? AlertTriangle : Info;
+
   return (
     <div className={`alert-banner ${tone}`} role="status">
-      <span>{tone === "warning" ? "⚠️" : "🔮"}</span>
+      <Icon size={16} />
       <span>{message}</span>
       <button
         aria-label="Dismiss"
@@ -33,7 +36,7 @@ export function AlertBanner({ message, tone = "warning", onDismiss }: Props) {
           onDismiss?.();
         }}
       >
-        ×
+        <X size={15} />
       </button>
     </div>
   );

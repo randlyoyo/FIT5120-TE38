@@ -1,0 +1,253 @@
+import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  fetchDualRoutes,
+  fetchHeatmap,
+  fetchPredictiveAlerts,
+  fetchQuietSpaces,
+  fetchSensors,
+} from "../services/api";
+import type {
+  DualRouteResult,
+  HeatmapPoint,
+  LatLon,
+  PredictiveAlert,
+  QuietSpace,
+  Sensor,
+  SensitivityLevel,
+} from "../types";
+
+const HEATMAP_REFRESH_MS = 60_000;
+const PREDICTIVE_REFRESH_MS = 90_000;
+const ROUTE_RECHECK_MS = 90_000; // US 1.3: re-check conditions along the active route periodically
+const SENSITIVITY_STORAGE_KEY = "sensory-nav:sensitivity";
+
+export type PickMode = "start" | "end" | null;
+
+function loadStoredSensitivity(): SensitivityLevel {
+  const stored = localStorage.getItem(SENSITIVITY_STORAGE_KEY);
+  return stored === "low" || stored === "medium" || stored === "high" ? stored : "medium";
+}
+
+interface AppState {
+  sensors: Sensor[];
+  quietSpaces: QuietSpace[];
+  heatmapPoints: HeatmapPoint[];
+  predictiveAlerts: PredictiveAlert[];
+  initError: string | null;
+
+  showHeatmap: boolean;
+  setShowHeatmap: (v: boolean) => void;
+  showSensors: boolean;
+  setShowSensors: (v: boolean) => void;
+
+  sensitivity: SensitivityLevel;
+  setSensitivity: (level: SensitivityLevel) => void;
+
+  start: LatLon | null;
+  end: LatLon | null;
+  startLabel: string;
+  endLabel: string;
+  setStart: (point: LatLon | null, label?: string) => void;
+  setEnd: (point: LatLon | null, label?: string) => void;
+  pickMode: PickMode;
+  setPickMode: (mode: PickMode) => void;
+  handleMapPick: (point: LatLon) => void;
+
+  routes: DualRouteResult | null;
+  planning: boolean;
+  routeError: string | null;
+  planRoute: () => Promise<void>;
+
+  // US 1.3: while a route is active, we silently re-check conditions and offer a swap if
+  // crowding along the current quietest route has gotten worse (or a clearly better
+  // alternative appears) - never auto-swap the user's route out from under them.
+  routeUpdateAvailable: DualRouteResult | null;
+  acceptRouteUpdate: () => void;
+  dismissRouteUpdate: () => void;
+
+  crowdAlertMessage: string | null;
+  clearCrowdAlert: () => void;
+}
+
+const AppStateContext = createContext<AppState | null>(null);
+
+export function AppStateProvider({ children }: { children: ReactNode }) {
+  const [sensors, setSensors] = useState<Sensor[]>([]);
+  const [quietSpaces, setQuietSpaces] = useState<QuietSpace[]>([]);
+  const [heatmapPoints, setHeatmapPoints] = useState<HeatmapPoint[]>([]);
+  const [predictiveAlerts, setPredictiveAlerts] = useState<PredictiveAlert[]>([]);
+  const [initError, setInitError] = useState<string | null>(null);
+
+  const [showHeatmap, setShowHeatmap] = useState(true);
+  const [showSensors, setShowSensors] = useState(false);
+  const [sensitivity, setSensitivityState] = useState<SensitivityLevel>(loadStoredSensitivity);
+
+  const [start, setStartPoint] = useState<LatLon | null>(null);
+  const [end, setEndPoint] = useState<LatLon | null>(null);
+  const [startLabel, setStartLabel] = useState("");
+  const [endLabel, setEndLabel] = useState("");
+  const [pickMode, setPickMode] = useState<PickMode>(null);
+
+  const [routes, setRoutes] = useState<DualRouteResult | null>(null);
+  const [planning, setPlanning] = useState(false);
+  const [routeError, setRouteError] = useState<string | null>(null);
+  const [routeUpdateAvailable, setRouteUpdateAvailable] = useState<DualRouteResult | null>(null);
+  const [crowdAlertMessage, setCrowdAlertMessage] = useState<string | null>(null);
+  const routesRef = useRef(routes);
+  routesRef.current = routes;
+
+  useEffect(() => {
+    Promise.all([fetchSensors(), fetchQuietSpaces(), fetchHeatmap()])
+      .then(([s, q, h]) => {
+        setSensors(s);
+        setQuietSpaces(q);
+        setHeatmapPoints(h);
+      })
+      .catch((err) => setInitError(`Failed to reach backend API: ${err.message}`));
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetchHeatmap().then(setHeatmapPoints).catch(() => {});
+    }, HEATMAP_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const load = () => fetchPredictiveAlerts().then(setPredictiveAlerts).catch(() => {});
+    load();
+    const id = setInterval(load, PREDICTIVE_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  const setSensitivity = useCallback((level: SensitivityLevel) => {
+    setSensitivityState(level);
+    localStorage.setItem(SENSITIVITY_STORAGE_KEY, level);
+  }, []);
+
+  const setStart = useCallback((point: LatLon | null, label = "") => {
+    setStartPoint(point);
+    setStartLabel(label);
+  }, []);
+
+  const setEnd = useCallback((point: LatLon | null, label = "") => {
+    setEndPoint(point);
+    setEndLabel(label);
+  }, []);
+
+  const handleMapPick = useCallback(
+    (point: LatLon) => {
+      if (pickMode === "start") {
+        setStart(point);
+        setPickMode(null);
+      } else if (pickMode === "end") {
+        setEnd(point);
+        setPickMode(null);
+      } else if (!start) {
+        setStart(point);
+      } else {
+        setEnd(point);
+      }
+    },
+    [pickMode, start, setStart, setEnd]
+  );
+
+  const planRoute = useCallback(async () => {
+    if (!start || !end) return;
+    setPlanning(true);
+    setRouteError(null);
+    setCrowdAlertMessage(null);
+    setRouteUpdateAvailable(null);
+    try {
+      const result = await fetchDualRoutes(start, end, sensitivity);
+      setRoutes(result);
+      if (result.crowdAlert.triggered && result.crowdAlert.message) {
+        setCrowdAlertMessage(result.crowdAlert.message);
+      }
+    } catch (err) {
+      setRouteError((err as Error).message);
+    } finally {
+      setPlanning(false);
+    }
+  }, [start, end, sensitivity]);
+
+  // En-route monitoring (US 1.3): while a route is active, periodically re-plan silently in the
+  // background and flag it for the user if conditions along the current route got worse.
+  useEffect(() => {
+    if (!routes || !start || !end) return;
+
+    const id = setInterval(async () => {
+      const current = routesRef.current;
+      if (!current) return;
+      try {
+        const candidate = await fetchDualRoutes(start, end, sensitivity);
+        const gotMoreCrowded = candidate.crowdAlert.triggered && !current.crowdAlert.triggered;
+        const flippedToHigh = candidate.quietest.sensoryLevel === "High" && current.quietest.sensoryLevel === "Low";
+        const meaningfullyBetterPath =
+          candidate.quietest.sensoryScore < current.quietest.sensoryScore * 0.85 &&
+          Math.abs(candidate.quietest.distanceMeters - current.quietest.distanceMeters) > 30;
+
+        if (gotMoreCrowded || flippedToHigh || meaningfullyBetterPath) {
+          setRouteUpdateAvailable(candidate);
+        }
+      } catch {
+        // silent - this is a background check, the user's current route is still shown
+      }
+    }, ROUTE_RECHECK_MS);
+
+    return () => clearInterval(id);
+  }, [routes !== null, start, end, sensitivity]);
+
+  const acceptRouteUpdate = useCallback(() => {
+    setRouteUpdateAvailable((pending) => {
+      if (!pending) return null;
+      setRoutes(pending);
+      if (pending.crowdAlert.triggered && pending.crowdAlert.message) {
+        setCrowdAlertMessage(pending.crowdAlert.message);
+      }
+      return null;
+    });
+  }, []);
+
+  const dismissRouteUpdate = useCallback(() => setRouteUpdateAvailable(null), []);
+
+  const value: AppState = {
+    sensors,
+    quietSpaces,
+    heatmapPoints,
+    predictiveAlerts,
+    initError,
+    showHeatmap,
+    setShowHeatmap,
+    showSensors,
+    setShowSensors,
+    sensitivity,
+    setSensitivity,
+    start,
+    end,
+    startLabel,
+    endLabel,
+    setStart,
+    setEnd,
+    pickMode,
+    setPickMode,
+    handleMapPick,
+    routes,
+    planning,
+    routeError,
+    planRoute,
+    routeUpdateAvailable,
+    acceptRouteUpdate,
+    dismissRouteUpdate,
+    crowdAlertMessage,
+    clearCrowdAlert: () => setCrowdAlertMessage(null),
+  };
+
+  return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;
+}
+
+export function useAppState(): AppState {
+  const ctx = useContext(AppStateContext);
+  if (!ctx) throw new Error("useAppState must be used within AppStateProvider");
+  return ctx;
+}

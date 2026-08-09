@@ -1,13 +1,11 @@
+import { DEFAULT_SENSITIVITY, SensitivityLevel, thresholdsFor } from "../config/sensitivity";
+import { buildNavigationSteps, NavigationStep } from "./instructionFormatter";
 import { getRouteAlternatives, OsrmRoute } from "./osrmService";
 import {
   getCurrentDensityPerSensor,
   scoreRouteSensoryLoad,
   SensorDensity,
 } from "./weightCalculator";
-
-const CROWD_ALERT_THRESHOLD = Number(process.env.CROWD_ALERT_THRESHOLD ?? 100);
-// Score above which a route is labelled "High" sensory load (tune against real data).
-const HIGH_SENSORY_SCORE_THRESHOLD = 150;
 
 export type SensoryLevel = "Low" | "High";
 
@@ -19,6 +17,7 @@ export interface ScoredRoute {
   sensoryScore: number;
   sensoryLevel: SensoryLevel;
   hotspots: SensorDensity[];
+  steps: NavigationStep[];
 }
 
 export interface DualRouteResult {
@@ -26,12 +25,14 @@ export interface DualRouteResult {
   quietest: ScoredRoute;
   crowdAlert: { triggered: boolean; message?: string; hotspots: SensorDensity[] };
   identicalPaths: boolean;
+  sensitivity: SensitivityLevel;
 }
 
 function toScoredRoute(
   mode: "fastest" | "quietest",
   route: OsrmRoute,
-  densities: SensorDensity[]
+  densities: SensorDensity[],
+  highSensoryScoreThreshold: number
 ): ScoredRoute {
   const { score, hotspots } = scoreRouteSensoryLoad(route.geometry.coordinates, densities);
   return {
@@ -40,14 +41,17 @@ function toScoredRoute(
     durationSeconds: route.durationSeconds,
     geometry: route.geometry,
     sensoryScore: Math.round(score),
-    sensoryLevel: score >= HIGH_SENSORY_SCORE_THRESHOLD ? "High" : "Low",
+    sensoryLevel: score >= highSensoryScoreThreshold ? "High" : "Low",
     hotspots,
+    steps: buildNavigationSteps(route.steps),
   };
 }
 
 /**
- * Computes dual-mode routing per spec 3.3: fastest (shortest travel time) and
- * quietest (lowest pedestrian-density exposure), plus the crowd alert per 3.5.
+ * Computes dual-mode routing per spec 3.3/1.3: fastest (shortest travel time) and quietest
+ * (lowest pedestrian-density exposure) for the caller's chosen crowd-sensitivity level, plus
+ * the crowd alert per 3.5 evaluated against that same user-defined threshold (see
+ * src/config/sensitivity.ts for how the three tiers were calibrated).
  *
  * Weighting approach: OSRM supplies up to a few geometrically distinct
  * alternatives for the walking profile; each is scored as
@@ -58,8 +62,11 @@ function toScoredRoute(
  */
 export async function planDualRoutes(
   start: { lat: number; lon: number },
-  end: { lat: number; lon: number }
+  end: { lat: number; lon: number },
+  sensitivity: SensitivityLevel = DEFAULT_SENSITIVITY
 ): Promise<DualRouteResult> {
+  const { crowdAlertThreshold, highSensoryScoreThreshold } = thresholdsFor(sensitivity);
+
   const [alternatives, densities] = await Promise.all([
     getRouteAlternatives(start, end),
     getCurrentDensityPerSensor(),
@@ -73,15 +80,15 @@ export async function planDualRoutes(
   const fastestRaw = alternatives.reduce((a, b) => (a.durationSeconds <= b.durationSeconds ? a : b));
   const quietestEntry = scored.reduce((a, b) => (a.score <= b.score ? a : b));
 
-  const fastest = toScoredRoute("fastest", fastestRaw, densities);
-  const quietest = toScoredRoute("quietest", quietestEntry.raw, densities);
+  const fastest = toScoredRoute("fastest", fastestRaw, densities, highSensoryScoreThreshold);
+  const quietest = toScoredRoute("quietest", quietestEntry.raw, densities, highSensoryScoreThreshold);
 
-  const overThreshold = quietest.hotspots.filter((h) => h.count >= CROWD_ALERT_THRESHOLD);
+  const overThreshold = quietest.hotspots.filter((h) => h.count >= crowdAlertThreshold);
   const crowdAlert = {
     triggered: overThreshold.length > 0,
     message:
       overThreshold.length > 0
-        ? `前方路段当前拥挤 (${overThreshold[0].sensorName})，建议考虑绕行 / Ahead is currently crowded near ${overThreshold[0].sensorName} - consider an alternate route.`
+        ? `Ahead is currently crowded near ${overThreshold[0].sensorName} - consider an alternate route.`
         : undefined,
     hotspots: overThreshold,
   };
@@ -93,5 +100,6 @@ export async function planDualRoutes(
     identicalPaths:
       fastestRaw.geometry.coordinates.length === quietestEntry.raw.geometry.coordinates.length &&
       fastestRaw.distanceMeters === quietestEntry.raw.distanceMeters,
+    sensitivity,
   };
 }

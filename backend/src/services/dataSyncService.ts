@@ -9,7 +9,7 @@ const OPEN_DATA_BASE =
 const SENSOR_LOCATIONS_DATASET = "pedestrian-counting-system-sensor-locations";
 const HOURLY_COUNTS_DATASET = "pedestrian-counting-system-monthly-counts-per-hour";
 
-interface SensorLocationRecord {
+export interface SensorLocationRecord {
   location_id: number;
   sensor_name: string;
   status?: string;
@@ -32,6 +32,10 @@ interface HourlyCountRecord {
 }
 
 const API_PAGE_SIZE = 100; // data.melbourne.vic.gov.au (OpenDataSoft v2.1) rejects limit > 100.
+
+export async function fetchSensorLocationRecords(maxRecords = 200): Promise<SensorLocationRecord[]> {
+  return fetchRecords<SensorLocationRecord>(SENSOR_LOCATIONS_DATASET, {}, maxRecords);
+}
 
 async function fetchPage<T>(dataset: string, params: Record<string, unknown>): Promise<T[]> {
   const { data } = await axios.get(`${OPEN_DATA_BASE}/${dataset}/records`, {

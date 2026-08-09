@@ -1,4 +1,6 @@
 import { prisma } from "../models";
+import { getFallbackDensityForSensor } from "./bootstrapData";
+import { fetchSensorLocationRecords } from "./dataSyncService";
 import { haversineMeters } from "../utils/dbHelpers";
 
 export interface SensorDensity {
@@ -16,45 +18,67 @@ export interface SensorDensity {
  * realtime reading exists, per spec section 3.3.
  */
 export async function getCurrentDensityPerSensor(): Promise<SensorDensity[]> {
-  const sensors = await prisma.sensor.findMany({ where: { status: "A" } });
-  const cutoff = new Date(Date.now() - 30 * 60 * 1000);
-  const now = new Date();
-  const hourOfDay = now.getHours();
+  try {
+    const sensors = await prisma.sensor.findMany({ where: { status: "A" } });
+    if (sensors.length === 0) throw new Error("No sensors in database");
 
-  const results: SensorDensity[] = [];
-  for (const sensor of sensors) {
-    const latest = await prisma.realtimeCount.findFirst({
-      where: { sensorId: sensor.locationId, sensingTime: { gte: cutoff } },
-      orderBy: { sensingTime: "desc" },
-    });
+    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    const now = new Date();
+    const hourOfDay = now.getHours();
 
-    if (latest) {
+    const results: SensorDensity[] = [];
+    for (const sensor of sensors) {
+      const latest = await prisma.realtimeCount.findFirst({
+        where: { sensorId: sensor.locationId, sensingTime: { gte: cutoff } },
+        orderBy: { sensingTime: "desc" },
+      });
+
+      if (latest) {
+        results.push({
+          locationId: sensor.locationId,
+          sensorName: sensor.sensorName,
+          latitude: sensor.latitude,
+          longitude: sensor.longitude,
+          count: latest.totalCount,
+          isHistorical: false,
+        });
+        continue;
+      }
+
+      const historical = await prisma.pedestrianCount.aggregate({
+        where: { sensorId: sensor.locationId, hourOfDay },
+        _avg: { pedestrianCount: true },
+      });
+
       results.push({
         locationId: sensor.locationId,
         sensorName: sensor.sensorName,
         latitude: sensor.latitude,
         longitude: sensor.longitude,
-        count: latest.totalCount,
-        isHistorical: false,
+        count: Math.round(historical._avg.pedestrianCount ?? 0),
+        isHistorical: true,
       });
-      continue;
     }
-
-    const historical = await prisma.pedestrianCount.aggregate({
-      where: { sensorId: sensor.locationId, hourOfDay },
-      _avg: { pedestrianCount: true },
-    });
-
-    results.push({
-      locationId: sensor.locationId,
-      sensorName: sensor.sensorName,
-      latitude: sensor.latitude,
-      longitude: sensor.longitude,
-      count: Math.round(historical._avg.pedestrianCount ?? 0),
-      isHistorical: true,
-    });
+    return results;
+  } catch {
+    const liveSensors = await fetchSensorLocationRecords(200);
+    const now = new Date();
+    return liveSensors
+      .map((record) => {
+        const lat = record.location?.lat ?? record.latitude;
+        const lon = record.location?.lon ?? record.longitude;
+        if (lat == null || lon == null) return null;
+        return {
+          locationId: record.location_id,
+          sensorName: record.sensor_name,
+          latitude: lat,
+          longitude: lon,
+          count: getFallbackDensityForSensor(record.location_id, now.getHours()),
+          isHistorical: true,
+        };
+      })
+      .filter(Boolean) as SensorDensity[];
   }
-  return results;
 }
 
 /** Normalises counts to a 0-1 sensory load factor using the current max as ceiling. */

@@ -1,13 +1,12 @@
-import dns from "node:dns";
-import { Pool } from "pg";
+import { neon } from "@neondatabase/serverless";
 
-// node-postgres calls socket.connect(port, host) directly - it doesn't expose a way to pass a
-// custom `lookup` resolver through Pool/Client config, so the earlier attempt to inject one
-// there was a no-op. This process-wide setting is the actual lever: it changes what Node's
-// default dns.lookup() (which net.Socket.connect uses internally) returns first when a host
-// has both A and AAAA records, in case Railway's IPv6 egress is the failure.
-dns.setDefaultResultOrder("ipv4first");
+// HTTP-based driver instead of a TCP pool: each query is a single fetch, no
+// persistent connection to keep alive between serverless invocations, and no
+// WebSocket handshake overhead - the right shape for Vercel functions.
+// fullResults:true makes sql.query() return the same { rows, ... } shape
+// pg.Pool.query() did, so dbQueries.ts needed no changes.
+const sql = neon(process.env.DATABASE_URL as string, { fullResults: true });
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-});
+export const pool = {
+  query: (text: string, params: unknown[] = []) => sql.query(text, params) as Promise<{ rows: any[] }>,
+};

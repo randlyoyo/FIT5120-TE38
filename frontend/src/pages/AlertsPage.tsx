@@ -64,7 +64,7 @@ export function AlertsPage() {
         <ul className="place-list">
           {busiestNow.map((p) => (
             <li
-              key={p.sensorName}
+              key={p.locationId}
               className={`place-list-item${p.dataQuality === "stale" ? " place-list-item-muted" : ""}`}
             >
               <span className={`severity-dot ${severityClass(p.intensity)}`} />

@@ -16,6 +16,7 @@ heatmapRouter.get("/", async (_req, res) => {
     const maxCount = Math.max(1, ...densities.map((d) => d.count));
 
     const points = densities.map((d) => ({
+      locationId: d.locationId,
       lat: d.latitude,
       lon: d.longitude,
       count: d.count,

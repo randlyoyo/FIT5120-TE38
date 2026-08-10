@@ -21,6 +21,7 @@ export interface QuietSpace {
 }
 
 export interface HeatmapPoint {
+  locationId: number;
   lat: number;
   lon: number;
   count: number;

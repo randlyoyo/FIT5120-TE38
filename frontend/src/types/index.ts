@@ -1,3 +1,7 @@
+// Mirrors the team DB's v_current_crowding.data_quality (说明.md):
+// live -> show as-is, stale -> grey out + "last updated HH:MM", no_live_data -> label "estimated".
+export type DataQuality = "live" | "stale" | "no_live_data";
+
 export interface Sensor {
   locationId: number;
   sensorName: string;
@@ -22,7 +26,10 @@ export interface HeatmapPoint {
   count: number;
   intensity: number;
   sensorName: string;
-  isHistorical: boolean;
+  sensoryLoad: number;
+  crowdLevel: "low" | "medium" | "high";
+  dataQuality: DataQuality;
+  lastReadingTs: string | null;
 }
 
 export type SensoryLevel = "Low" | "High";
@@ -33,7 +40,9 @@ export interface SensorHotspot {
   latitude: number;
   longitude: number;
   count: number;
-  isHistorical: boolean;
+  sensoryLoad: number;
+  crowdLevel: "low" | "medium" | "high";
+  dataQuality: DataQuality;
 }
 
 export interface NavigationStep {

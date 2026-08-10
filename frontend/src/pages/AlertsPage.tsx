@@ -9,6 +9,19 @@ function severityClass(intensity: number): string {
   return "green";
 }
 
+// 说明.md: live -> show as-is, stale -> grey + "last updated HH:MM", no_live_data -> "estimated" -
+// never present a stale/estimated reading as if it were live.
+function dataQualityLabel(dataQuality: "live" | "stale" | "no_live_data", lastReadingTs: string | null): string {
+  if (dataQuality === "live") return "(latest reading)";
+  if (dataQuality === "stale") {
+    const time = lastReadingTs
+      ? new Date(lastReadingTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "unknown";
+    return `(last updated ${time})`;
+  }
+  return "(estimated)";
+}
+
 // Alerts tab (spec 3.5, 3.6): a list-based, non-visual alternative to the map's colour coding -
 // current busiest spots and predictive "will get busy soon" alerts.
 export function AlertsPage() {
@@ -50,12 +63,15 @@ export function AlertsPage() {
         <h3 className="section-title">Busiest right now</h3>
         <ul className="place-list">
           {busiestNow.map((p) => (
-            <li key={p.sensorName} className="place-list-item">
+            <li
+              key={p.sensorName}
+              className={`place-list-item${p.dataQuality === "stale" ? " place-list-item-muted" : ""}`}
+            >
               <span className={`severity-dot ${severityClass(p.intensity)}`} />
               <div className="place-list-body">
                 <div className="place-list-title">{p.sensorName}</div>
                 <div className="place-list-sub">
-                  {p.count} pedestrians {p.isHistorical ? "(historical avg.)" : "(latest reading)"}
+                  {p.count} pedestrians {dataQualityLabel(p.dataQuality, p.lastReadingTs)}
                 </div>
               </div>
             </li>

@@ -8,7 +8,11 @@ export function AboutPage() {
 
       <section>
         <h3 className="section-title">Data sources</h3>
-        <p className="hint">City of Melbourne open data (data.melbourne.vic.gov.au):</p>
+        <p className="hint">
+          Served from the team's shared database (101 CBD pedestrian sensors, sensory-refuge
+          landmarks), itself built on City of Melbourne open data
+          (data.melbourne.vic.gov.au):
+        </p>
         <ul className="about-list">
           <li>Pedestrian Counting System — Sensor Locations</li>
           <li>Pedestrian Counting System — Monthly Counts per Hour</li>
@@ -19,9 +23,10 @@ export function AboutPage() {
       <section>
         <h3 className="section-title">Known limitations</h3>
         <ul className="about-list">
-          <li>The pedestrian-count dataset is published monthly, so the "live" heatmap uses each sensor's most recently published hourly reading rather than minute-by-minute telemetry.</li>
-          <li>Routing uses the public OSRM demo server plus a sensor-density scoring pass, rather than a self-hosted road network with custom edge weights.</li>
-          <li>Predictive alerts need a few days of accumulated history for a given sensor/hour before they can trigger.</li>
+          <li>Only pedestrian volume is measured — no noise or light data, so the "sensory load" score is a proxy, not a direct sensory measurement.</li>
+          <li>Coverage is the 101 CBD pedestrian sensors only; routes outside that footprint can't be scored.</li>
+          <li>Sensors are points, not road segments, so matching a route to nearby sensors is an approximation, not per-segment ground truth.</li>
+          <li>Readings can be <code>live</code>, <code>stale</code>, or <code>estimated</code> (no recent live data) — the map and alerts always label which one you're looking at.</li>
         </ul>
       </section>
 
@@ -33,6 +38,14 @@ export function AboutPage() {
           Melbourne CBD.
         </p>
       </section>
+
+      <footer className="about-footer">
+        Data © City of Melbourne, licensed under{" "}
+        <a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noreferrer">
+          CC BY 4.0
+        </a>
+        .
+      </footer>
     </div>
   );
 }

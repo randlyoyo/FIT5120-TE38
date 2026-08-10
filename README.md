@@ -20,8 +20,8 @@ by avoiding high-pedestrian-density corridors, built for FIT5120 Onboarding (UNS
 **Epic 2 — Sensory Environment Monitoring**
 - Continuous sensory-load field over the whole map (inverse-distance-weighted spatial interpolation from real sensor readings — green→yellow→red), not a per-icon color, and not a point-density heatmap (see "Sensory field rendering" below for why)
 - Quiet-space list/map view (parks, libraries, galleries) with distance-from-you sorting and one-tap "navigate here"
-- Predictive alerts (current count > historical mean + 1 std dev) shown as pulsing map markers and in a dedicated Alerts list, alongside a "busiest right now" ranking
-- `node-cron` jobs pulling City of Melbourne open data every 5 min (realtime) and daily at 2am (historical)
+- Predictive alerts (current hourly rate > historical 95th percentile for this weekday+hour) shown as pulsing map markers and in a dedicated Alerts list, alongside a "busiest right now" ranking
+- Data freshness is surfaced everywhere it's shown, not just implied: every reading carries a `data_quality` of `live` / `stale` / `no_live_data` and the UI greys out stale points and labels estimates as such
 
 **Not yet implemented** (see the Epic 1/2 Definitions of Done in the requirements doc):
 - Public-transport access-point integration into walking routes
@@ -53,15 +53,35 @@ spatial interpolation from each sensor's live reading:
   right after a pinch/zoom gesture. Redraws are deferred one frame via `requestAnimationFrame`
   and only fire on `moveend`/`zoomend`, never on every animation frame.
 
-## Real data sources (data.melbourne.vic.gov.au / data.gov.au)
+## Database
 
-- `pedestrian-counting-system-sensor-locations` — sensor metadata (135 live sensors)
-- `pedestrian-counting-system-monthly-counts-per-hour` — hourly pedestrian counts
-- `landmarks-and-places-of-interest-including-schools-theatres-health-services-spor` — quiet spaces (parks/libraries/galleries)
+The database (Postgres, hosted on Neon) is owned and ingested by the team's data pipeline —
+this repo's backend is a **read-only consumer** of it, not the ingestion system. It's built on
+top of the same City of Melbourne open datasets (`pedestrian-counting-system-sensor-locations`,
+`pedestrian-counting-system-monthly-counts-per-hour`, and a landmarks dataset for sensory-refuge
+candidates), pre-aggregated into views/materialized views so the backend never has to compute
+statistics itself:
 
-**Honesty note:** the hourly-counts dataset is published monthly, not minute-by-minute, so
-`realtime_counts` approximates "current" density using the most recently published hour per
-sensor rather than true to-the-minute telemetry. `pedestrian_counts` (historical) is genuine.
+| View / table | Used for |
+|---|---|
+| `v_current_crowding` | Map page — every sensor's current crowding, `sensory_load`, `crowd_level`, `data_quality` |
+| `mv_sensor_hour_baseline` | Hour-of-day curves, quiet-window recommendations (US 1.3), predictive alerts (US 2.2) |
+| `mv_sensor_sensory_profile` | Route-level sensory scoring (US 1.1) |
+| `landmark` + `landmark_category` + `theme` | Sensory-refuge quiet spaces (US 2.1), filtered on `is_sensory_refuge` |
+| `ingestion_run`, `pedestrian_minute_count`, `pedestrian_hour_count`, `sensor_location` | `/api/health` pipeline status |
+
+Backend queries live in `backend/src/services/dbQueries.ts` via a plain `pg` pool (no ORM — the
+data is read-only and already shaped as views, so an ORM would add indirection without benefit).
+
+**Rules the backend must not violate** (per the DB owner):
+- Always read `data_quality` and reflect it honestly — never show a `stale`/`no_live_data` value as if it were live.
+- Join on `location_id`, never `sensor_name` (nullable, can change).
+- Don't call the City of Melbourne API directly — read the shared DB instead, to avoid tripping their rate limit.
+- Footer must credit `Data © City of Melbourne, licensed under CC BY 4.0`.
+
+**Limitations acknowledged by the DB owner:** only pedestrian volume is modelled (no noise/light
+data, so "sensory load" is a proxy); coverage is the 101 CBD sensors only; sensors are points, so
+route-to-sensor matching is an approximation, not per-segment ground truth.
 
 ## Routing approach (documented simplification)
 
@@ -83,37 +103,32 @@ in `backend/.env` can be pointed at a self-hosted OSRM instance later without an
 ```
 .
 ├── frontend/   React 18 + TypeScript + Vite + React-Leaflet + React Router + lucide-react
-├── backend/    Node + Express + TypeScript + Prisma + MySQL
-└── docker-compose.yml   local MySQL 8.0
+└── backend/    Node + Express + TypeScript + pg (read-only client of the team's Neon Postgres DB)
 ```
 
 ## Local development
 
-Prerequisites: Node 18+, Docker Desktop.
+Prerequisites: Node 18+. No local database to stand up — the backend talks to the team's
+shared Neon Postgres instance directly (ask the DB owner for the connection string).
 
 ```bash
-# 1. start MySQL
-docker compose up -d mysql
-
-# 2. backend
+# 1. backend
 cd backend
-cp .env.example .env
+cp .env.example .env        # fill in DATABASE_URL with the shared connection string
 npm install
-npx prisma migrate deploy   # applies prisma/migrations
-npm run seed                # baseline demo data (safe to re-run)
 npm run dev                 # http://localhost:4000
 
-# 3. frontend (new terminal)
+# 2. frontend (new terminal)
 cd frontend
 cp .env.example .env
 npm install
 npm run dev                 # http://localhost:5173
 ```
 
-The seed script inserts a curated baseline of CBD sensors/quiet spaces/14 days of synthetic
-history so the app is demoable offline. The cron jobs (or running the sync functions in
-`backend/src/services/dataSyncService.ts` manually) then overlay/extend this with live
-open-data records — sensor IDs match, so this is a safe upgrade path, not a conflict.
+If the DB has been idle for a few minutes, Neon suspends it — the first request after that has
+a few seconds of cold-start latency, then it's normal. If the DB is genuinely unreachable, the
+`/api/spaces` and `/api/spaces/sensors` endpoints fall back to a small static in-memory dataset
+(`backend/src/services/bootstrapData.ts`) so the frontend still has something to render.
 
 ## Deployment
 
@@ -124,12 +139,11 @@ Already live (see links at the top). To redeploy or set up your own:
 2. Add env var `VITE_API_BASE_URL=https://<your-backend-url>/api`.
 3. Deploy → you get `https://<project>.vercel.app`.
 
-**Backend + MySQL → Railway** (or any Node + MySQL host):
-1. New Railway project → add a MySQL plugin → add a service from this repo's `backend/` directory.
-2. Set env vars from `backend/.env.example` (`DATABASE_URL` from Railway's MySQL plugin).
-3. Railway auto-detects the Node build; `postinstall` runs `prisma generate` and `start` runs `prisma migrate deploy` before booting, so a fresh deploy applies the schema automatically.
-4. Run `npm run seed` once (e.g. via `railway ssh -- npm run seed`), or let the cron jobs populate live data.
-5. Set `CORS_ORIGIN` to your Vercel URL.
+**Backend → Railway** (or any Node host):
+1. New Railway project → add a service from this repo's `backend/` directory.
+2. Set env vars from `backend/.env.example` — `DATABASE_URL` is the shared Neon connection string (ask the DB owner, don't provision a new database).
+3. Railway auto-detects the Node build (`npm run build` / `npm start`) — no migration step needed, the schema is owned and managed outside this repo.
+4. Set `CORS_ORIGIN` to your Vercel URL.
 
 The current deployment was pushed via `vercel deploy --prod` / `railway up` directly (not a
 GitHub-connected auto-deploy) — pushing to `main` will **not** automatically redeploy either
@@ -138,8 +152,8 @@ service yet.
 ## Known limitations (for the Discovery Presentation "Innovation"/"Code Quality" sections)
 
 - OSRM public demo server is rate-limited; production would self-host OSRM over a Melbourne OSM extract.
-- Predictive alerts need several days of historical data per sensor to be meaningful; freshly-synced
-  sensors show no alert until `pedestrian_counts` accumulates for that sensor/hour.
+- Predictive alerts and quiet-hour recommendations are only as good as `mv_sensor_hour_baseline`'s
+  sample size (`n_samples`) for that sensor/weekday/hour — thin samples make for a noisy baseline.
 - Nominatim (OSM) geocoding is used client-side for search/autocomplete, bounded to the Melbourne CBD viewbox.
 - No public-transport access-point integration yet.
 - No formal accessibility/usability testing with neurodivergent users has been conducted yet.

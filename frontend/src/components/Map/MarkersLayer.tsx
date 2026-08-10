@@ -17,14 +17,29 @@ interface Props {
   heatmapPoints?: HeatmapPoint[];
 }
 
-function getSensorColor(heatmapPoints: HeatmapPoint[], sensor: Sensor): string {
-  const point = heatmapPoints.find((p) => Math.abs(p.lat - sensor.latitude) < 0.0005 && Math.abs(p.lon - sensor.longitude) < 0.0005);
-  if (!point) return "#dc2626";
+function findHeatmapPoint(heatmapPoints: HeatmapPoint[], sensor: Sensor): HeatmapPoint | undefined {
+  return heatmapPoints.find((p) => Math.abs(p.lat - sensor.latitude) < 0.0005 && Math.abs(p.lon - sensor.longitude) < 0.0005);
+}
 
+function getSensorColor(point: HeatmapPoint | undefined): string {
+  if (!point) return "#dc2626";
   const intensity = point.intensity;
   if (intensity >= 0.75) return "#dc2626";
   if (intensity >= 0.45) return "#f59e0b";
   return "#16a34a";
+}
+
+// 说明.md: never present stale/estimated readings as if they were live.
+function dataQualityText(point: HeatmapPoint | undefined): string {
+  if (!point) return "";
+  if (point.dataQuality === "live") return "";
+  if (point.dataQuality === "stale") {
+    const time = point.lastReadingTs
+      ? new Date(point.lastReadingTs).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "unknown";
+    return ` (last updated ${time})`;
+  }
+  return " (estimated)";
 }
 
 // Sensor points and quiet-space markers (spec 3.1, 3.4).
@@ -42,15 +57,21 @@ export function MarkersLayer({ sensors, quietSpaces, showSensors, heatmapPoints 
     <>
       {showSensors &&
         sensors.map((s) => {
-          const sensorIcon = createBadgeIcon(Radio, { background: getSensorColor(heatmapPoints, s), size: 26, iconSize: 13 });
+          const point = findHeatmapPoint(heatmapPoints, s);
+          const sensorIcon = createBadgeIcon(Radio, { background: getSensorColor(point), size: 26, iconSize: 13 });
           return (
-            <Marker key={`sensor-${s.locationId}`} position={[s.latitude, s.longitude]} icon={sensorIcon}>
+            <Marker
+              key={`sensor-${s.locationId}`}
+              position={[s.latitude, s.longitude]}
+              icon={sensorIcon}
+              opacity={point?.dataQuality === "stale" ? 0.6 : 1}
+            >
               <Popup>
                 <strong>{s.sensorName}</strong>
                 <br />
                 Pedestrian count sensor
                 <br />
-                Status: {s.status}
+                {point ? `${point.count} people/min${dataQualityText(point)}` : `Status: ${s.status}`}
               </Popup>
             </Marker>
           );

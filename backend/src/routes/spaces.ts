@@ -1,22 +1,33 @@
 import { Router } from "express";
-import { prisma } from "../models";
 import { cache, CACHE_KEYS } from "../services/cacheService";
 import { getFallbackQuietSpaces, getFallbackSensors } from "../services/bootstrapData";
-import { fetchSensorLocationRecords } from "../services/dataSyncService";
+import { getAllSensors, getAllSensoryRefuges } from "../services/dbQueries";
 
 export const spacesRouter = Router();
 
-// GET /api/spaces - all quiet spaces (parks, libraries, galleries) for map markers.
+// GET /api/spaces - sensory-refuge landmarks (parks, libraries, galleries) for map markers.
+// Category filtering is team-judgement, not an official council classification - see 说明.md
+// (excludes cemeteries, public buildings, visitor centres).
 spacesRouter.get("/", async (_req, res) => {
   try {
     const cached = cache.get(CACHE_KEYS.quietSpaces);
     if (cached) return res.json(cached);
 
     try {
-      const spaces = await prisma.quietSpace.findMany();
+      const refuges = await getAllSensoryRefuges();
+      const spaces = refuges.map((r) => ({
+        id: r.landmarkId,
+        featureName: r.featureName,
+        theme: r.themeName,
+        subTheme: r.subTheme,
+        latitude: r.latitude,
+        longitude: r.longitude,
+        address: null,
+      }));
       cache.set(CACHE_KEYS.quietSpaces, spaces, 300);
       res.json(spaces);
-    } catch {
+    } catch (dbError) {
+      console.warn("[spaces] team DB unavailable, using static fallback quiet spaces:", (dbError as Error).message);
       const fallback = getFallbackQuietSpaces();
       cache.set(CACHE_KEYS.quietSpaces, fallback, 300);
       res.json(fallback);
@@ -36,27 +47,9 @@ spacesRouter.get("/sensors", async (_req, res) => {
     let sensors: Array<{ locationId: number; sensorName: string; latitude: number; longitude: number; status: string }> = [];
 
     try {
-      sensors = await prisma.sensor.findMany({ where: { status: "A" } });
+      sensors = await getAllSensors();
     } catch (dbError) {
-      console.warn("[spaces/sensors] DB unavailable, using live Melbourne sensor records instead", (dbError as Error).message);
-    }
-
-    if (sensors.length === 0) {
-      const liveSensors = await fetchSensorLocationRecords(200);
-      sensors = liveSensors
-        .map((record) => {
-          const lat = record.location?.lat ?? record.latitude;
-          const lon = record.location?.lon ?? record.longitude;
-          if (lat == null || lon == null) return null;
-          return {
-            locationId: record.location_id,
-            sensorName: record.sensor_name,
-            latitude: lat,
-            longitude: lon,
-            status: record.status ?? "A",
-          };
-        })
-        .filter((value): value is NonNullable<typeof value> => value !== null);
+      console.warn("[spaces/sensors] team DB unavailable, using static fallback sensors:", (dbError as Error).message);
     }
 
     if (sensors.length === 0) {

@@ -1,5 +1,4 @@
-import { prisma } from "../models";
-import { getCurrentDensityPerSensor } from "./weightCalculator";
+import { getPredictiveAlertRows } from "./dbQueries";
 
 export interface PredictiveAlert {
   locationId: number;
@@ -13,40 +12,22 @@ export interface PredictiveAlert {
 }
 
 /**
- * Spec 3.6: predicts whether each sensor's current reading exceeds
- * historical mean + 1 standard deviation for this weekday+hour, flagging it
- * as "expected to become busy within the next hour".
+ * Spec 3.6: predicts whether each sensor's current reading is expected to
+ * become busy within the next hour, using the team DB's precomputed
+ * mv_sensor_hour_baseline (avg/p95 per weekday+hour) rather than computing
+ * our own statistics.
  */
 export async function getPredictiveAlerts(): Promise<PredictiveAlert[]> {
-  const now = new Date();
-  const hourOfDay = now.getHours();
+  const rows = await getPredictiveAlertRows();
 
-  const stats = await prisma.$queryRawUnsafe<
-    { sensor_id: number; mean: number; stddev: number }[]
-  >(
-    `SELECT sensor_id, AVG(pedestrian_count) AS mean, STDDEV_POP(pedestrian_count) AS stddev
-     FROM pedestrian_counts
-     WHERE hour_of_day = ?
-     GROUP BY sensor_id`,
-    hourOfDay
-  );
-  const statsBySensor = new Map(stats.map((s) => [s.sensor_id, s]));
-
-  const currentDensities = await getCurrentDensityPerSensor();
-
-  return currentDensities.map((d) => {
-    const s = statsBySensor.get(d.locationId);
-    const mean = s?.mean ?? 0;
-    const stddev = s?.stddev ?? 0;
-    return {
-      locationId: d.locationId,
-      sensorName: d.sensorName,
-      latitude: d.latitude,
-      longitude: d.longitude,
-      currentCount: d.count,
-      historicalMean: Math.round(mean),
-      historicalStdDev: Math.round(stddev),
-      willBeBusy: d.count > mean + stddev && mean > 0,
-    };
-  });
+  return rows.map((r) => ({
+    locationId: r.locationId,
+    sensorName: r.sensorName,
+    latitude: r.latitude,
+    longitude: r.longitude,
+    currentCount: r.currentHourlyEstimate,
+    historicalMean: Math.round(r.historicalAvg),
+    historicalStdDev: Math.round(r.historicalP95 - r.historicalAvg),
+    willBeBusy: r.willBeBusy,
+  }));
 }

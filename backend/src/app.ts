@@ -1,6 +1,7 @@
 import cors from "cors";
 import express from "express";
 import { alertsRouter } from "./routes/alerts";
+import { healthRouter } from "./routes/health";
 import { heatmapRouter } from "./routes/heatmap";
 import { routeRouter } from "./routes/route";
 import { spacesRouter } from "./routes/spaces";
@@ -15,8 +16,7 @@ export function createApp() {
   );
   app.use(express.json());
 
-  app.get("/api/health", (_req, res) => res.json({ status: "ok" }));
-
+  app.use("/api/health", healthRouter);
   app.use("/api/spaces", spacesRouter);
   app.use("/api/heatmap", heatmapRouter);
   app.use("/api/route", routeRouter);

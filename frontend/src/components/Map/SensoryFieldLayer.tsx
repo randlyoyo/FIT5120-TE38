@@ -28,10 +28,12 @@ function colorForValue(v: number): [number, number, number] {
 
 /**
  * A real Leaflet layer (not a plain DOM child of the container) so it lives inside the
- * overlayPane and inherits Leaflet's own pan/zoom CSS transform - this keeps it visually
- * glued to the map during animations without per-frame JS. Content is repainted with a real
- * inverse-distance-weighted interpolation (metres-based, so it looks the same at every zoom
- * level) only once a gesture finishes (moveend/zoomend), not on every animation frame.
+ * overlayPane. Content is repainted with a real inverse-distance-weighted interpolation
+ * (metres-based, so it looks the same at every zoom level) only once a gesture finishes
+ * (moveend/zoomend), not on every animation frame - but *during* the zoom animation itself
+ * the canvas is CSS scale+translate'd to track the gesture (same technique Leaflet's own
+ * ImageOverlay uses via the 'zoomanim' event), so it stays glued to the map continuously
+ * instead of sitting frozen until the animation ends and then snapping to the new frame.
  */
 const SensoryField = L.Layer.extend({
   initialize(points: HeatmapPoint[], visible: boolean) {
@@ -41,9 +43,16 @@ const SensoryField = L.Layer.extend({
 
   onAdd(map: L.Map) {
     this._map = map;
-    this._canvas = L.DomUtil.create("canvas", "sensory-field-canvas") as HTMLCanvasElement;
+    // leaflet-zoom-animated is required for the zoomanim transform below to be picked up by
+    // Leaflet's own CSS transition (.leaflet-zoom-anim .leaflet-zoom-animated { transition:
+    // transform ... }) - without it, setTransform() snaps instantly to the end state instead
+    // of smoothly interpolating alongside the tiles, which is what read as "twitching".
+    this._canvas = L.DomUtil.create("canvas", "sensory-field-canvas leaflet-zoom-animated") as HTMLCanvasElement;
     map.getPanes().overlayPane.appendChild(this._canvas);
     map.on("moveend zoomend resize", this._reset, this);
+    if ((L.Browser as any).any3d) {
+      map.on("zoomanim", this._animateZoom, this);
+    }
     this._reset();
     return this;
   },
@@ -52,6 +61,7 @@ const SensoryField = L.Layer.extend({
     if (this._raf) cancelAnimationFrame(this._raf);
     L.DomUtil.remove(this._canvas);
     map.off("moveend zoomend resize", this._reset, this);
+    map.off("zoomanim", this._animateZoom, this);
   },
 
   setData(points: HeatmapPoint[], visible: boolean) {
@@ -60,11 +70,15 @@ const SensoryField = L.Layer.extend({
     this._reset();
   },
 
+  // Tracks the canvas back to an untransformed state (scale 1) at the latlng that was its
+  // top-left corner when it was last painted, so _animateZoom below has a stable reference
+  // point to scale+translate from during the next zoom gesture.
   _reset() {
     const map: L.Map = this._map;
     const canvas: HTMLCanvasElement = this._canvas;
     const topLeft = map.containerPointToLayerPoint([0, 0]);
     L.DomUtil.setPosition(canvas, topLeft);
+    this._topLeftLatLng = map.containerPointToLatLng([0, 0]);
 
     const size = map.getSize();
     canvas.width = size.x;
@@ -76,6 +90,18 @@ const SensoryField = L.Layer.extend({
     // zoom/pan gesture handling itself.
     if (this._raf) cancelAnimationFrame(this._raf);
     this._raf = requestAnimationFrame(() => this._draw());
+  },
+
+  // Fires repeatedly *during* the zoom animation (not just at the end) with the in-progress
+  // target { center, zoom } - reproject the canvas's last-known top-left latlng into that
+  // target's pixel space and CSS-transform the existing bitmap to match, exactly like Leaflet
+  // does for its own tile/image layers, so the field visibly scales with the gesture.
+  _animateZoom(e: L.ZoomAnimEvent) {
+    const map: L.Map = this._map;
+    if (!this._topLeftLatLng) return;
+    const scale = map.getZoomScale(e.zoom, map.getZoom());
+    const newTopLeft = (map as any)._latLngToNewLayerPoint(this._topLeftLatLng, e.zoom, e.center);
+    L.DomUtil.setTransform(this._canvas, newTopLeft, scale);
   },
 
   _draw() {

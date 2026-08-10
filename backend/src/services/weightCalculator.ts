@@ -1,6 +1,5 @@
-import { prisma } from "../models";
-import { getFallbackDensityForSensor } from "./bootstrapData";
-import { fetchSensorLocationRecords } from "./dataSyncService";
+import { getCurrentCrowding, CrowdLevel, DataQuality } from "./dbQueries";
+import { getFallbackDensityForSensor, getFallbackSensors } from "./bootstrapData";
 import { haversineMeters } from "../utils/dbHelpers";
 
 export interface SensorDensity {
@@ -9,75 +8,49 @@ export interface SensorDensity {
   latitude: number;
   longitude: number;
   count: number;
-  isHistorical: boolean;
+  sensoryLoad: number;
+  crowdLevel: CrowdLevel;
+  dataQuality: DataQuality;
+  lastReadingTs: string | null;
 }
 
 /**
- * Current pedestrian density per sensor: latest realtime_counts row (last 30 min)
- * falling back to the historical average for the current weekday+hour when no
- * realtime reading exists, per spec section 3.3.
+ * Current pedestrian density per sensor, read straight from the team's
+ * v_current_crowding view - it already falls back live -> hourly baseline ->
+ * historical median and stamps data_quality, so no client-side fallback math
+ * is needed here. Only touches the static in-memory fallback if the DB itself
+ * is unreachable.
  */
 export async function getCurrentDensityPerSensor(): Promise<SensorDensity[]> {
   try {
-    const sensors = await prisma.sensor.findMany({ where: { status: "A" } });
-    if (sensors.length === 0) throw new Error("No sensors in database");
+    const rows = await getCurrentCrowding();
+    if (rows.length === 0) throw new Error("v_current_crowding returned no rows");
 
-    const cutoff = new Date(Date.now() - 30 * 60 * 1000);
+    return rows.map((r) => ({
+      locationId: r.locationId,
+      sensorName: r.sensorName,
+      latitude: r.latitude,
+      longitude: r.longitude,
+      count: r.displayCountPerMinute,
+      sensoryLoad: r.sensoryLoad ?? 0,
+      crowdLevel: r.crowdLevel,
+      dataQuality: r.dataQuality,
+      lastReadingTs: r.lastReadingTs,
+    }));
+  } catch (err) {
+    console.warn("[weightCalculator] team DB unavailable, using static fallback densities:", (err as Error).message);
     const now = new Date();
-    const hourOfDay = now.getHours();
-
-    const results: SensorDensity[] = [];
-    for (const sensor of sensors) {
-      const latest = await prisma.realtimeCount.findFirst({
-        where: { sensorId: sensor.locationId, sensingTime: { gte: cutoff } },
-        orderBy: { sensingTime: "desc" },
-      });
-
-      if (latest) {
-        results.push({
-          locationId: sensor.locationId,
-          sensorName: sensor.sensorName,
-          latitude: sensor.latitude,
-          longitude: sensor.longitude,
-          count: latest.totalCount,
-          isHistorical: false,
-        });
-        continue;
-      }
-
-      const historical = await prisma.pedestrianCount.aggregate({
-        where: { sensorId: sensor.locationId, hourOfDay },
-        _avg: { pedestrianCount: true },
-      });
-
-      results.push({
-        locationId: sensor.locationId,
-        sensorName: sensor.sensorName,
-        latitude: sensor.latitude,
-        longitude: sensor.longitude,
-        count: Math.round(historical._avg.pedestrianCount ?? 0),
-        isHistorical: true,
-      });
-    }
-    return results;
-  } catch {
-    const liveSensors = await fetchSensorLocationRecords(200);
-    const now = new Date();
-    return liveSensors
-      .map((record) => {
-        const lat = record.location?.lat ?? record.latitude;
-        const lon = record.location?.lon ?? record.longitude;
-        if (lat == null || lon == null) return null;
-        return {
-          locationId: record.location_id,
-          sensorName: record.sensor_name,
-          latitude: lat,
-          longitude: lon,
-          count: getFallbackDensityForSensor(record.location_id, now.getHours()),
-          isHistorical: true,
-        };
-      })
-      .filter(Boolean) as SensorDensity[];
+    return getFallbackSensors().map((s) => ({
+      locationId: s.locationId,
+      sensorName: s.sensorName,
+      latitude: s.latitude,
+      longitude: s.longitude,
+      count: getFallbackDensityForSensor(s.locationId, now.getHours()),
+      sensoryLoad: 0,
+      crowdLevel: "low",
+      dataQuality: "no_live_data",
+      lastReadingTs: null,
+    }));
   }
 }
 

@@ -306,6 +306,19 @@
   padding-left: 18px;
 }
 
+.about-footer {
+  padding: 14px;
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: #6b7280;
+  border-top: 1px solid #e5e7eb;
+}
+
+.about-footer a {
+  color: inherit;
+  text-decoration: underline;
+}
+
 /* ================= Route panel / navigation ================= */
 
 .route-panel {
@@ -696,6 +709,11 @@
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   border-radius: 10px;
+}
+
+/* 说明.md: stale data_quality must read as "not current", not as a live value. */
+.place-list-item-muted {
+  opacity: 0.6;
 }
 
 .place-list-icon {

@@ -16,6 +16,13 @@ export interface ScoredRoute {
   geometry: { type: "LineString"; coordinates: [number, number][] };
   sensoryScore: number;
   sensoryLevel: SensoryLevel;
+  /**
+   * sensoryScore expressed as a percentage of the caller's sensitivity threshold - 100 is
+   * exactly the "High" cutoff for their tier, so it's comparable across fastest/quietest and
+   * meaningful without knowing the raw score's units. Uncapped: a route well past the
+   * threshold reads e.g. 240, not clamped to 100, so two "High" routes stay distinguishable.
+   */
+  noiseScore: number;
   hotspots: SensorDensity[];
   steps: NavigationStep[];
 }
@@ -42,23 +49,38 @@ function toScoredRoute(
     geometry: route.geometry,
     sensoryScore: Math.round(score),
     sensoryLevel: score >= highSensoryScoreThreshold ? "High" : "Low",
+    noiseScore: Math.round((score / highSensoryScoreThreshold) * 100),
     hotspots,
     steps: buildNavigationSteps(route.steps),
   };
 }
 
 /**
+ * distance x (1 + relative sensory load), where "relative" is the route's raw score divided
+ * by the caller's own highSensoryScoreThreshold - so the same absolute crowd exposure costs
+ * more at a stricter sensitivity tier than a looser one. This is what makes sensitivity
+ * actually change *which* OSRM alternative wins "quietest", not just how it's labelled: at
+ * "high" sensitivity a meaningfully quieter but longer alternative can out-score a shorter,
+ * busier one, where at "low" sensitivity the same pair would rank the other way.
+ */
+function combinedCost(distanceMeters: number, score: number, highSensoryScoreThreshold: number): number {
+  return distanceMeters * (1 + score / highSensoryScoreThreshold);
+}
+
+/**
  * Computes dual-mode routing per spec 3.3/1.3: fastest (shortest travel time) and quietest
- * (lowest pedestrian-density exposure) for the caller's chosen crowd-sensitivity level, plus
- * the crowd alert per 3.5 evaluated against that same user-defined threshold (see
- * src/config/sensitivity.ts for how the three tiers were calibrated).
+ * for the caller's chosen crowd-sensitivity level, plus the crowd alert per 3.5 evaluated
+ * against that same user-defined threshold (see src/config/sensitivity.ts for how the three
+ * tiers were calibrated).
  *
- * Weighting approach: OSRM supplies up to a few geometrically distinct
- * alternatives for the walking profile; each is scored as
- * distance x (1 + normalised pedestrian density along the path) and the
- * lowest-scoring alternative is offered as the "quietest" route. This
- * approximates the spec's Dijkstra-over-weighted-edges approach without
- * requiring a self-hosted OSRM instance with custom edge weights.
+ * Weighting approach: OSRM supplies up to a few geometrically distinct alternatives for the
+ * walking profile; each is scored as distance x (1 + relative sensory load) via
+ * combinedCost() above, and the lowest-cost alternative is offered as "quietest". Because the
+ * relative-load term is normalised against the caller's own sensitivity threshold, sensitivity
+ * doesn't just relabel a fixed pick - it can change *which* alternative wins: at "high"
+ * sensitivity the algorithm will trade more distance for a quieter path than it would at "low".
+ * This approximates the spec's Dijkstra-over-weighted-edges approach without requiring a
+ * self-hosted OSRM instance with custom edge weights.
  */
 export async function planDualRoutes(
   start: { lat: number; lon: number },
@@ -81,7 +103,11 @@ export async function planDualRoutes(
 
   const fastestEntry = scored.reduce((a, b) => (a.raw.durationSeconds <= b.raw.durationSeconds ? a : b));
   const fastestRaw = fastestEntry.raw;
-  const quietestEntry = scored.reduce((a, b) => (a.score <= b.score ? a : b));
+  const quietestEntry = scored.reduce((a, b) => {
+    const costA = combinedCost(a.raw.distanceMeters, a.score, highSensoryScoreThreshold);
+    const costB = combinedCost(b.raw.distanceMeters, b.score, highSensoryScoreThreshold);
+    return costA <= costB ? a : b;
+  });
   const quietestCandidateRaw = baseAlternatives.length > 1 ? quietestEntry.raw : fastestRaw;
 
   const fastest = toScoredRoute("fastest", fastestRaw, densities, highSensoryScoreThreshold);

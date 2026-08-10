@@ -62,6 +62,9 @@ export interface ScoredRoute {
   geometry: { type: "LineString"; coordinates: [number, number][] };
   sensoryScore: number;
   sensoryLevel: SensoryLevel;
+  // sensoryScore as a % of the user's sensitivity threshold - 100 = right at their "High" cutoff.
+  // Uncapped, so two "High" routes stay distinguishable (e.g. 240 vs 110).
+  noiseScore: number;
   hotspots: SensorHotspot[];
   steps: NavigationStep[];
 }

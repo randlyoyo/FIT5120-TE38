@@ -23,7 +23,7 @@ export function RouteLayer({ routes }: Props) {
       <Polyline positions={fastestPositions} pathOptions={{ color: "#2563eb", weight: 8, opacity: 1, lineCap: "round", lineJoin: "round" }}>
         <Popup>
           Fastest route · {(routes.fastest.distanceMeters / 1000).toFixed(2)} km ·{" "}
-          {Math.round(routes.fastest.durationSeconds / 60)} min
+          {Math.round(routes.fastest.durationSeconds / 60)} min · noise score {routes.fastest.noiseScore}
         </Popup>
       </Polyline>
     );
@@ -36,7 +36,7 @@ export function RouteLayer({ routes }: Props) {
         pathOptions={{ color: quietColor, weight: 3, opacity: 0.95, dashArray: "8,8" }}
       >
         <Popup>
-          Quietest route ({routes.quietest.sensoryLevel} sensory load) ·{" "}
+          Quietest route ({routes.quietest.sensoryLevel} sensory load, score {routes.quietest.noiseScore}) ·{" "}
           {(routes.quietest.distanceMeters / 1000).toFixed(2)} km ·{" "}
           {Math.round(routes.quietest.durationSeconds / 60)} min
         </Popup>
@@ -45,7 +45,7 @@ export function RouteLayer({ routes }: Props) {
       <Polyline positions={fastestPositions} pathOptions={{ color: "#2563eb", weight: 8, opacity: 1, lineCap: "round", lineJoin: "round" }}>
         <Popup>
           Fastest route · {(routes.fastest.distanceMeters / 1000).toFixed(2)} km ·{" "}
-          {Math.round(routes.fastest.durationSeconds / 60)} min
+          {Math.round(routes.fastest.durationSeconds / 60)} min · noise score {routes.fastest.noiseScore}
         </Popup>
       </Polyline>
     </>

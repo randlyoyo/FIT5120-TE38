@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { useAppState } from "../../context/AppStateContext";
 import { LoadingSpinner } from "../common/LoadingSpinner";
 import { DirectionsList } from "./DirectionsList";
+import { NoiseBadge } from "./NoiseBadge";
 import { PlaceAutocomplete } from "./PlaceAutocomplete";
 import { SensitivitySelector } from "./SensitivitySelector";
 
@@ -128,8 +129,8 @@ export function RoutePanel() {
             <strong>Conditions along your route have changed.</strong>
             <span>
               Updated quietest route: {(routeUpdateAvailable.quietest.distanceMeters / 1000).toFixed(2)} km,{" "}
-              {Math.round(routeUpdateAvailable.quietest.durationSeconds / 60)} min ·{" "}
-              {routeUpdateAvailable.quietest.sensoryLevel} sensory load
+              {Math.round(routeUpdateAvailable.quietest.durationSeconds / 60)} min · noise score{" "}
+              {routeUpdateAvailable.quietest.noiseScore}
             </span>
           </div>
           <div className="route-update-actions">
@@ -149,16 +150,23 @@ export function RoutePanel() {
             className={`route-tab fastest ${activeDirections === "fastest" ? "selected" : ""}`}
             onClick={() => setActiveDirections("fastest")}
           >
-            <span className="dot blue" /> Fastest — {(routes.fastest.distanceMeters / 1000).toFixed(2)} km,{" "}
-            {Math.round(routes.fastest.durationSeconds / 60)} min
+            <span className="dot blue" />
+            <span className="route-tab-label">
+              Fastest — {(routes.fastest.distanceMeters / 1000).toFixed(2)} km,{" "}
+              {Math.round(routes.fastest.durationSeconds / 60)} min
+            </span>
+            <NoiseBadge noiseScore={routes.fastest.noiseScore} />
           </button>
           <button
             className={`route-tab quietest ${activeDirections === "quietest" ? "selected" : ""}`}
             onClick={() => setActiveDirections("quietest")}
           >
-            <span className={`dot ${routes.quietest.sensoryLevel === "High" ? "orange" : "green"}`} /> Quietest —{" "}
-            {(routes.quietest.distanceMeters / 1000).toFixed(2)} km,{" "}
-            {Math.round(routes.quietest.durationSeconds / 60)} min · <strong>{routes.quietest.sensoryLevel} sensory load</strong>
+            <span className={`dot ${routes.quietest.sensoryLevel === "High" ? "orange" : "green"}`} />
+            <span className="route-tab-label">
+              Quietest — {(routes.quietest.distanceMeters / 1000).toFixed(2)} km,{" "}
+              {Math.round(routes.quietest.durationSeconds / 60)} min
+            </span>
+            <NoiseBadge noiseScore={routes.quietest.noiseScore} />
           </button>
           {routes.identicalPaths && <p className="hint">No quieter alternative found for this trip — showing the same path.</p>}
 

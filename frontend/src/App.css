@@ -589,6 +589,11 @@
   font-family: inherit;
 }
 
+.route-tab-label {
+  flex: 1;
+  min-width: 0;
+}
+
 .route-tab.selected {
   background: #eff6ff;
   border-color: #2563eb;
@@ -640,6 +645,42 @@
 
 .dot.orange {
   background: #f97316;
+}
+
+/* Noise score badge: 100 = the user's chosen sensitivity threshold - see NoiseBadge.tsx */
+.noise-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.noise-badge-label {
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-size: 0.65rem;
+}
+
+.noise-badge.calm {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.noise-badge.moderate {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.noise-badge.loud {
+  background: #fee2e2;
+  color: #991b1b;
 }
 
 .severity-dot {

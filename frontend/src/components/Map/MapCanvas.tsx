@@ -2,6 +2,7 @@ import { ChevronRight, Flame, Radio, Search } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAppState } from "../../context/AppStateContext";
 import { AlertBanner } from "../Controls/AlertBanner";
+import { NoiseBadge } from "../Controls/NoiseBadge";
 import { MapView } from "./MapView";
 
 // Persistent map layer shown behind every panel (mobile: full-screen on the Map tab and hidden
@@ -41,9 +42,10 @@ export function MapCanvas() {
       {routes && (
         <button className="route-mini-card" onClick={() => navigate("/navigate")}>
           <span className={`dot ${routes.quietest.sensoryLevel === "High" ? "orange" : "green"}`} />
-          <span>
+          <span className="route-tab-label">
             Quietest route — {(routes.quietest.distanceMeters / 1000).toFixed(2)} km, {Math.round(routes.quietest.durationSeconds / 60)} min
           </span>
+          <NoiseBadge noiseScore={routes.quietest.noiseScore} />
           <ChevronRight size={16} className="route-mini-card-arrow" />
         </button>
       )}

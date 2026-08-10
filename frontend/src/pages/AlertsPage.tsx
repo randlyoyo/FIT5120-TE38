@@ -50,7 +50,7 @@ export function AlertsPage() {
                 <div className="place-list-body">
                   <div className="place-list-title">{a.sensorName}</div>
                   <div className="place-list-sub">
-                    Current {a.currentCount} vs. usual {a.historicalMean} (±{a.historicalStdDev})
+                    Usually {a.currentTypicalCount}/hr now, expected ~{a.nextHourExpectedCount}/hr within the hour
                   </div>
                 </div>
               </li>

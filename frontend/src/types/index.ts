@@ -84,9 +84,8 @@ export interface PredictiveAlert {
   sensorName: string;
   latitude: number;
   longitude: number;
-  currentCount: number;
-  historicalMean: number;
-  historicalStdDev: number;
+  currentTypicalCount: number;
+  nextHourExpectedCount: number;
   willBeBusy: boolean;
 }
 

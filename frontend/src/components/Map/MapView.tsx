@@ -106,7 +106,7 @@ export function MapView() {
             <br />
             Expected to get busy within the hour
             <br />
-            Current {a.currentCount} vs. usual {a.historicalMean} (±{a.historicalStdDev})
+            Usually {a.currentTypicalCount}/hr now, expected ~{a.nextHourExpectedCount}/hr soon
           </Popup>
         </Marker>
       ))}

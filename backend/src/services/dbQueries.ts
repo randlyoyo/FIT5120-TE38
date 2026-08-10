@@ -330,47 +330,61 @@ export interface PredictiveAlertRow {
   sensorName: string;
   latitude: number;
   longitude: number;
-  currentHourlyEstimate: number;
-  historicalAvg: number;
-  historicalP95: number;
+  currentTypicalCount: number;
+  nextHourExpectedCount: number;
+  currentHourP95: number;
   willBeBusy: boolean;
 }
 
 /**
- * Spec 3.6 - flags sensors whose current reading (annualised to an hourly rate)
- * already exceeds the historical 95th percentile for this weekday+hour, using
- * mv_sensor_hour_baseline.p95_total as the "expected to become busy" threshold
- * instead of a hand-rolled mean+stddev query.
+ * Spec 3.6/US 2.2 - genuinely forward-looking: compares next hour's typical (avg_total) volume
+ * against this hour's own "busy" bar (p95_total) for the same weekday. Flags a sensor only when
+ * the upcoming hour is expected to be busier than even an unusually busy version of right now.
+ *
+ * Earlier version compared a single live/stale *minute* reading, extrapolated x60, against the
+ * hourly p95 - that's backward-looking (describes "now", not "soon") and wildly noisy: a single
+ * stale one-minute sample (e.g. 44 people counted a day ago) extrapolated to "2640/hour" blew
+ * past the real hourly p95 for ~19 of 101 sensors simultaneously, none of it meaningful. Using
+ * only the stable hourly baseline for both sides of the comparison avoids that entirely.
  */
 export async function getPredictiveAlertRows(): Promise<PredictiveAlertRow[]> {
   const { rows } = await pool.query(
-    `SELECT c.location_id,
-            c.sensor_name,
-            c.latitude,
-            c.longitude,
-            c.display_count_per_minute * 60 AS current_hourly_estimate,
-            b.avg_total,
-            b.p95_total
-     FROM v_current_crowding c
-     LEFT JOIN mv_sensor_hour_baseline b
-       ON b.location_id = c.location_id
-      AND b.day_of_week = EXTRACT(ISODOW FROM (now() AT TIME ZONE 'Australia/Melbourne'))::SMALLINT
-      AND b.hour_of_day = EXTRACT(HOUR FROM (now() AT TIME ZONE 'Australia/Melbourne'))::SMALLINT
-     ORDER BY c.location_id`
+    `WITH now_local AS (
+       SELECT (now() AT TIME ZONE 'Australia/Melbourne') AS ts
+     ),
+     current_hour AS (
+       SELECT b.location_id, b.avg_total AS current_avg, b.p95_total AS current_p95
+       FROM mv_sensor_hour_baseline b, now_local n
+       WHERE b.day_of_week = EXTRACT(ISODOW FROM n.ts)::SMALLINT
+         AND b.hour_of_day = EXTRACT(HOUR FROM n.ts)::SMALLINT
+     ),
+     next_hour AS (
+       SELECT b.location_id, b.avg_total AS next_avg
+       FROM mv_sensor_hour_baseline b, now_local n
+       WHERE b.day_of_week = EXTRACT(ISODOW FROM (n.ts + INTERVAL '1 hour'))::SMALLINT
+         AND b.hour_of_day = EXTRACT(HOUR FROM (n.ts + INTERVAL '1 hour'))::SMALLINT
+     )
+     SELECT s.location_id, s.sensor_name, s.latitude, s.longitude,
+            c.current_avg, c.current_p95, nx.next_avg
+     FROM sensor_location s
+     LEFT JOIN current_hour c ON c.location_id = s.location_id
+     LEFT JOIN next_hour nx ON nx.location_id = s.location_id
+     WHERE s.status <> 'R'
+     ORDER BY s.location_id`
   );
   return rows.map((r) => {
-    const currentHourlyEstimate = Number(r.current_hourly_estimate ?? 0);
-    const historicalAvg = Number(r.avg_total ?? 0);
-    const historicalP95 = Number(r.p95_total ?? 0);
+    const currentTypicalCount = Number(r.current_avg ?? 0);
+    const nextHourExpectedCount = Number(r.next_avg ?? 0);
+    const currentHourP95 = Number(r.current_p95 ?? 0);
     return {
       locationId: r.location_id,
       sensorName: r.sensor_name,
       latitude: Number(r.latitude),
       longitude: Number(r.longitude),
-      currentHourlyEstimate,
-      historicalAvg,
-      historicalP95,
-      willBeBusy: historicalP95 > 0 && currentHourlyEstimate > historicalP95,
+      currentTypicalCount,
+      nextHourExpectedCount,
+      currentHourP95,
+      willBeBusy: currentHourP95 > 0 && nextHourExpectedCount > currentHourP95,
     };
   });
 }

@@ -38,7 +38,12 @@ export function RoutePanel() {
   function togglePick(which: "start" | "end") {
     const next = pickMode === which ? null : which;
     setPickMode(next);
-    if (next) navigate("/"); // switch to the map so the user can tap a point
+    // On desktop the map sits persistently beside this panel (see MapCanvas/AppShell), so it's
+    // already visible and clickable - no need to navigate away, which would otherwise collapse
+    // this panel for no reason. On mobile the map is hidden behind this panel (full-screen
+    // overlay), so switching to it is the only way to see it; MapCanvas jumps back here once
+    // the point is picked.
+    if (next && window.innerWidth < 900) navigate("/");
   }
 
   function useCurrentLocation() {

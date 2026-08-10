@@ -1,15 +1,16 @@
 import { useAppState } from "../../context/AppStateContext";
 import type { SensitivityLevel } from "../../types";
 
-// Mirrors backend/src/config/sensitivity.ts (SENSITIVITY_THRESHOLDS, DETOUR_BUDGET_RATIO) -
-// keep these two in sync if the calibration changes. Shown to the user directly instead of a
-// bare "Low/Medium/High" label, since that alone gives no sense of what each tier actually
-// does: how busy a spot has to be before it's flagged, and how much extra walking "quietest"
-// is willing to spend to avoid it.
-const LEVELS: { value: SensitivityLevel; label: string; threshold: number; detourPercent: number }[] = [
-  { value: "low", label: "Low", threshold: 130, detourPercent: 15 },
-  { value: "medium", label: "Medium", threshold: 75, detourPercent: 35 },
-  { value: "high", label: "High", threshold: 35, detourPercent: 70 },
+// Mirrors backend/src/config/sensitivity.ts SENSITIVITY_THRESHOLDS - keep these two in sync if
+// the calibration changes. Shown to the user directly instead of a bare "Low/Medium/High"
+// label, since that alone gives no sense of how busy a spot has to be before it counts as
+// "crowded" for them. Note: this threshold does NOT limit how far the quietest route detours -
+// quietest always picks the calmest available path regardless of distance (see
+// backend/src/services/routingService.ts planDualRoutes for why).
+const LEVELS: { value: SensitivityLevel; label: string; threshold: number }[] = [
+  { value: "low", label: "Low", threshold: 130 },
+  { value: "medium", label: "Medium", threshold: 75 },
+  { value: "high", label: "High", threshold: 35 },
 ];
 
 // User-defined crowd-sensitivity preference (spec US 1.3). Drives both which sensor readings
@@ -34,9 +35,7 @@ export function SensitivitySelector() {
             onClick={() => setSensitivity(l.value)}
           >
             <span className="sensitivity-option-title">{l.label}</span>
-            <span className="sensitivity-option-detail">
-              Flags {l.threshold}+ people/min · detours up to {l.detourPercent}% further to avoid crowds
-            </span>
+            <span className="sensitivity-option-detail">Flags {l.threshold}+ people/min as crowded</span>
           </button>
         ))}
       </div>

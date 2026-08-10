@@ -57,11 +57,10 @@ function toScoredRoute(
 }
 
 const DETOUR_OFFSET_METERS = [120, 280];
-// Generation-time cap is fixed at the most generous sensitivity tier's budget (see
-// config/sensitivity.ts DETOUR_BUDGET_RATIO) so the candidate pool has enough range for
-// whichever sensitivity the caller picks; the tighter per-sensitivity budget is applied when
-// *selecting* quietest, not when building candidates.
-const DETOUR_GENERATION_CAP_RATIO = 1.7;
+// Sanity cap on candidate generation only - rejects a manufactured detour that came back
+// absurdly long (e.g. OSRM routing a weird backtrack through the forced waypoint), not a
+// meaningful distance budget. Quietest selection itself does not consider distance at all.
+const DETOUR_GENERATION_CAP_RATIO = 2.5;
 
 /**
  * OSRM's public demo server very often returns only one route for Melbourne's grid-like CBD
@@ -123,20 +122,21 @@ async function buildDetourCandidates(
  *
  * Weighting approach: OSRM supplies up to a few geometrically distinct alternatives for the
  * walking profile (plus manufactured detour candidates when it doesn't - see
- * buildDetourCandidates above); "quietest" is the lowest-crowd-score candidate whose distance
- * fits within the caller's sensitivity-scaled detour budget (config/sensitivity.ts
- * DETOUR_BUDGET_RATIO), not a blended distance+crowd cost - blending let distance dominate in
- * practice and made quietest pick the same path as fastest almost every time, even when a
- * genuinely quieter-but-longer option existed. Sensitivity changes *which* candidate wins by
- * changing how much extra distance is on the table: "high" will spend up to 70% more distance
- * to find calm streets, "low" only takes a detour that's barely any longer.
+ * buildDetourCandidates above); "quietest" is simply whichever candidate has the lowest crowd
+ * score, full stop - distance plays no part in the choice. That's deliberate: "fastest" already
+ * covers the shortest/quickest option, so "quietest" is only useful as a distinct choice if it's
+ * free to trade away distance for calm. An earlier version scaled how much extra distance
+ * "quietest" could spend by sensitivity (a detour budget), but that let distance dominate and
+ * made quietest collapse back to fastest whenever the calmer candidate exceeded the budget.
+ * Sensitivity still governs the crowd-alert threshold and the Low/High sensory-level label
+ * (config/sensitivity.ts), just not which candidate "quietest" picks.
  */
 export async function planDualRoutes(
   start: { lat: number; lon: number },
   end: { lat: number; lon: number },
   sensitivity: SensitivityLevel = DEFAULT_SENSITIVITY
 ): Promise<DualRouteResult> {
-  const { crowdAlertThreshold, highSensoryScoreThreshold, detourBudgetRatio } = thresholdsFor(sensitivity);
+  const { crowdAlertThreshold, highSensoryScoreThreshold } = thresholdsFor(sensitivity);
 
   const [alternatives, densities] = await Promise.all([
     getRouteAlternatives(start, end),
@@ -174,13 +174,10 @@ export async function planDualRoutes(
     }
   }
 
-  // Quietest = lowest crowd score among candidates (OSRM alternatives + manufactured detours)
-  // that fit the sensitivity-scaled detour budget, measured against the *true* fastest route's
-  // distance - always includes at least the fastest route itself (ratio 1 <= any budget), so
-  // this is never empty.
-  const detourLimit = fastestRaw.distanceMeters * detourBudgetRatio;
-  const withinBudget = scored.filter((s) => s.raw.distanceMeters <= detourLimit);
-  const quietestEntry = withinBudget.reduce((a, b) => {
+  // Quietest = lowest crowd score among all candidates (OSRM alternatives + manufactured
+  // detours), no distance limit - see the doc comment above for why distance is intentionally
+  // not a factor here. Tie-break on distance only when scores are exactly equal.
+  const quietestEntry = scored.reduce((a, b) => {
     if (a.score !== b.score) return a.score <= b.score ? a : b;
     return a.raw.distanceMeters <= b.raw.distanceMeters ? a : b;
   });

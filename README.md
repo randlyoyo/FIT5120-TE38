@@ -5,7 +5,7 @@ by avoiding high-pedestrian-density corridors, built for FIT5120 Onboarding (UNS
 
 **Live:**
 - App: https://fit5120-te38-frontend.vercel.app
-- API: https://backend-production-056e.up.railway.app
+- API: https://fit5120-te38-backend.vercel.app
 
 ## What's implemented
 
@@ -70,8 +70,9 @@ statistics itself:
 | `landmark` + `landmark_category` + `theme` | Sensory-refuge quiet spaces (US 2.1), filtered on `is_sensory_refuge` |
 | `ingestion_run`, `pedestrian_minute_count`, `pedestrian_hour_count`, `sensor_location` | `/api/health` pipeline status |
 
-Backend queries live in `backend/src/services/dbQueries.ts` via a plain `pg` pool (no ORM — the
-data is read-only and already shaped as views, so an ORM would add indirection without benefit).
+Backend queries live in `backend/src/services/dbQueries.ts` via `@neondatabase/serverless`'s
+HTTP-based `neon()` client (no ORM, no TCP pool — the backend runs as Vercel serverless
+functions, so each query is a single stateless fetch rather than a persistent connection).
 
 **Rules the backend must not violate** (per the DB owner):
 - Always read `data_quality` and reflect it honestly — never show a `stale`/`no_live_data` value as if it were live.
@@ -102,8 +103,9 @@ in `backend/.env` can be pointed at a self-hosted OSRM instance later without an
 
 ```
 .
-├── frontend/   React 18 + TypeScript + Vite + React-Leaflet + React Router + lucide-react
-└── backend/    Node + Express + TypeScript + pg (read-only client of the team's Neon Postgres DB)
+├── frontend/   React 18 + TypeScript + Vite + React-Leaflet + React Router + lucide-react (Vercel)
+└── backend/    Node + Express + TypeScript, deployed as Vercel serverless functions
+                (api/index.ts wraps the Express app; @neondatabase/serverless reads the team's Neon Postgres DB over HTTP)
 ```
 
 ## Local development
@@ -132,22 +134,29 @@ a few seconds of cold-start latency, then it's normal. If the DB is genuinely un
 
 ## Deployment
 
-Already live (see links at the top). To redeploy or set up your own:
+Already live (see links at the top). Both frontend and backend are separate Vercel projects
+in the same `TE38` team, both connected to this GitHub repo — **pushing to `main` auto-deploys
+both** (no manual `vercel deploy` needed).
 
-**Frontend → Vercel** (free, permanent):
-1. Import this repo in Vercel, set root directory to `frontend/`.
-2. Add env var `VITE_API_BASE_URL=https://<your-backend-url>/api`.
-3. Deploy → you get `https://<project>.vercel.app`.
+**Frontend** (`fit5120-te38-frontend`): root directory `frontend/`, env var
+`VITE_API_BASE_URL=https://fit5120-te38-backend.vercel.app/api`. Vite bakes env vars in at
+build time, so changing this requires a redeploy (Vercel dashboard → Deployments → Redeploy)
+to take effect, not just saving the variable.
 
-**Backend → Railway** (or any Node host):
-1. New Railway project → add a service from this repo's `backend/` directory.
-2. Set env vars from `backend/.env.example` — `DATABASE_URL` is the shared Neon connection string (ask the DB owner, don't provision a new database).
-3. Railway auto-detects the Node build (`npm run build` / `npm start`) — no migration step needed, the schema is owned and managed outside this repo.
-4. Set `CORS_ORIGIN` to your Vercel URL.
+**Backend** (`fit5120-te38-backend`): root directory `backend/`, Express preset. The Node
+runtime executes `backend/api/index.ts` per request via `vercel.json`'s catch-all rewrite; it
+exports the Express app directly rather than calling `.listen()`. Env vars: `DATABASE_URL`
+(the shared Neon connection string — ask the DB owner, don't provision a new database),
+`CORS_ORIGIN` (the frontend's URL), `OSRM_BASE_URL`.
 
-The current deployment was pushed via `vercel deploy --prod` / `railway up` directly (not a
-GitHub-connected auto-deploy) — pushing to `main` will **not** automatically redeploy either
-service yet.
+**Why not Railway (tried first):** the backend was originally deployed on Railway using `pg`'s
+TCP driver, which reliably failed to reach Neon (`ETIMEDOUT` / `ENETUNREACH`) — most likely
+Railway's `EU West` region having a broken path to Neon's `ap-southeast-2` compute, though we
+didn't fully root-cause it (possibly a Neon IP allowlist instead). Moving to Vercel serverless
++ `@neondatabase/serverless`'s HTTP driver (no raw TCP to port 5432 at all) sidestepped the
+problem entirely, and better matches the backend's actual shape now that it has no cron jobs
+or long-running state left (see Database section above) - so we didn't chase the Railway
+networking issue further.
 
 ## Known limitations (for the Discovery Presentation "Innovation"/"Code Quality" sections)
 

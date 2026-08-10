@@ -160,6 +160,7 @@ export async function getSensorsToAvoid(): Promise<CurrentCrowding[]> {
 export interface SensorLocation {
   locationId: number;
   sensorName: string;
+  sensorDescription: string | null;
   latitude: number;
   longitude: number;
   status: string;
@@ -172,7 +173,7 @@ export interface SensorLocation {
  */
 export async function getAllSensors(): Promise<SensorLocation[]> {
   const { rows } = await pool.query(
-    `SELECT location_id, sensor_name, latitude, longitude, status
+    `SELECT location_id, sensor_name, sensor_description, latitude, longitude, status
      FROM sensor_location
      WHERE status <> 'R'
      ORDER BY location_id`
@@ -180,6 +181,7 @@ export async function getAllSensors(): Promise<SensorLocation[]> {
   return rows.map((r) => ({
     locationId: r.location_id,
     sensorName: r.sensor_name,
+    sensorDescription: r.sensor_description,
     latitude: Number(r.latitude),
     longitude: Number(r.longitude),
     status: r.status,

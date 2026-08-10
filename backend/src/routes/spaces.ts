@@ -44,7 +44,14 @@ spacesRouter.get("/sensors", async (_req, res) => {
     const cached = cache.get(CACHE_KEYS.sensors);
     if (cached) return res.json(cached);
 
-    let sensors: Array<{ locationId: number; sensorName: string; latitude: number; longitude: number; status: string }> = [];
+    let sensors: Array<{
+      locationId: number;
+      sensorName: string;
+      sensorDescription: string | null;
+      latitude: number;
+      longitude: number;
+      status: string;
+    }> = [];
 
     try {
       sensors = await getAllSensors();

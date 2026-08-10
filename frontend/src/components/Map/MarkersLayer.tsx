@@ -69,7 +69,7 @@ export function MarkersLayer({ sensors, quietSpaces, showSensors, heatmapPoints 
               opacity={!point || point.dataQuality === "stale" ? 0.6 : 1}
             >
               <Popup>
-                <strong>{s.sensorName}</strong>
+                <strong>{s.sensorDescription || s.sensorName}</strong>
                 <br />
                 Pedestrian count sensor
                 <br />

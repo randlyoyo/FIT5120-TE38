@@ -5,6 +5,7 @@ export type DataQuality = "live" | "stale" | "no_live_data";
 export interface Sensor {
   locationId: number;
   sensorName: string;
+  sensorDescription: string | null;
   latitude: number;
   longitude: number;
   status: string;

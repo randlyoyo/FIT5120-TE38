@@ -145,11 +145,20 @@ export async function planDualRoutes(
 
   const baseAlternatives = alternatives.length > 1 ? alternatives : [alternatives[0]];
 
-  const scored = baseAlternatives.map((r) => ({
+  const baseScored = baseAlternatives.map((r) => ({
     raw: r,
     score: scoreRouteSensoryLoad(r.geometry.coordinates, densities).score,
   }));
 
+  // "Fastest" must only ever be chosen from OSRM's own alternatives, never from a manufactured
+  // detour candidate below - a detour can legitimately report a *shorter duration* than the
+  // direct route despite covering more distance (different street/path types imply different
+  // walking speeds to OSRM), which would otherwise let a detour silently masquerade as
+  // "fastest" and send the user the long way round for no reason.
+  const fastestEntry = baseScored.reduce((a, b) => (a.raw.durationSeconds <= b.raw.durationSeconds ? a : b));
+  const fastestRaw = fastestEntry.raw;
+
+  const scored = [...baseScored];
   if (baseAlternatives.length === 1) {
     const direct = baseAlternatives[0];
     const { hotspots } = scoreRouteSensoryLoad(direct.geometry.coordinates, densities);
@@ -165,12 +174,10 @@ export async function planDualRoutes(
     }
   }
 
-  const fastestEntry = scored.reduce((a, b) => (a.raw.durationSeconds <= b.raw.durationSeconds ? a : b));
-  const fastestRaw = fastestEntry.raw;
-
-  // Quietest = lowest crowd score among candidates that fit the sensitivity-scaled detour
-  // budget - always includes at least the direct/fastest route itself (ratio 1 <= any budget),
-  // so this is never empty.
+  // Quietest = lowest crowd score among candidates (OSRM alternatives + manufactured detours)
+  // that fit the sensitivity-scaled detour budget, measured against the *true* fastest route's
+  // distance - always includes at least the fastest route itself (ratio 1 <= any budget), so
+  // this is never empty.
   const detourLimit = fastestRaw.distanceMeters * detourBudgetRatio;
   const withinBudget = scored.filter((s) => s.raw.distanceMeters <= detourLimit);
   const quietestEntry = withinBudget.reduce((a, b) => {

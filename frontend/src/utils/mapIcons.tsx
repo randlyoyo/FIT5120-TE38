@@ -15,9 +15,15 @@ export function createBadgeIcon(Icon: LucideIcon, { background, size = 30, iconS
   const iconMarkup = renderToStaticMarkup(
     createElement(Icon, { size: iconSize, color: "white", strokeWidth: 2.25 })
   );
+  // The pulse class goes on the inner .map-badge div, not the outer wrapper - Leaflet positions
+  // markers by setting transform: translate3d(...) directly on the wrapper element (the one
+  // className applies to), and a CSS animation on the *same* element's transform property
+  // replaces that value outright instead of composing with it. Putting `pulse` there breaks the
+  // marker's position on every pan/zoom repaint. Keeping the scale animation on a separate child
+  // element sidesteps the conflict entirely.
   return new L.DivIcon({
-    html: `<div class="map-badge" style="width:${size}px;height:${size}px;background:${background}">${iconMarkup}</div>`,
-    className: `map-badge-wrapper${pulse ? " pulse" : ""}`,
+    html: `<div class="map-badge${pulse ? " pulse" : ""}" style="width:${size}px;height:${size}px;background:${background}">${iconMarkup}</div>`,
+    className: "map-badge-wrapper",
     iconSize: [size, size],
     iconAnchor: [size / 2, size / 2],
   });

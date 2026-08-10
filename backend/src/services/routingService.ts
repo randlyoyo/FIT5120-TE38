@@ -1,6 +1,7 @@
 import { DEFAULT_SENSITIVITY, SensitivityLevel, thresholdsFor } from "../config/sensitivity";
+import { bearingBetween, destinationPoint, haversineMeters } from "../utils/dbHelpers";
 import { buildNavigationSteps, NavigationStep } from "./instructionFormatter";
-import { getRouteAlternatives, OsrmRoute } from "./osrmService";
+import { getRouteAlternatives, getRouteViaWaypoint, OsrmRoute } from "./osrmService";
 import {
   getCurrentDensityPerSensor,
   scoreRouteSensoryLoad,
@@ -55,16 +56,63 @@ function toScoredRoute(
   };
 }
 
+const DETOUR_OFFSET_METERS = [120, 280];
+// Generation-time cap is fixed at the most generous sensitivity tier's budget (see
+// config/sensitivity.ts DETOUR_BUDGET_RATIO) so the candidate pool has enough range for
+// whichever sensitivity the caller picks; the tighter per-sensitivity budget is applied when
+// *selecting* quietest, not when building candidates.
+const DETOUR_GENERATION_CAP_RATIO = 1.7;
+
 /**
- * distance x (1 + relative sensory load), where "relative" is the route's raw score divided
- * by the caller's own highSensoryScoreThreshold - so the same absolute crowd exposure costs
- * more at a stricter sensitivity tier than a looser one. This is what makes sensitivity
- * actually change *which* OSRM alternative wins "quietest", not just how it's labelled: at
- * "high" sensitivity a meaningfully quieter but longer alternative can out-score a shorter,
- * busier one, where at "low" sensitivity the same pair would rank the other way.
+ * OSRM's public demo server very often returns only one route for Melbourne's grid-like CBD
+ * streets even with alternatives=true, which leaves "quietest" nothing to pick but the same
+ * path as "fastest". When that happens, manufacture up to four genuine detour candidates: find
+ * the worst crowd hotspot the direct route passes, and request routes forced through waypoints
+ * offset perpendicular to the route on either side of that hotspot, at two different distances
+ * (a real detour, since OSRM treats an extra coordinate as mandatory, not optional) - one offset
+ * alone often either stays in the same crowded block or overshoots into a worse one, so trying a
+ * near and a far option per side gives the selection below more to actually choose between.
+ * Candidates that fail to route, or blow out the distance past DETOUR_GENERATION_CAP_RATIO, are
+ * dropped - this is a best-effort widening of the candidate pool, not a guaranteed win.
  */
-function combinedCost(distanceMeters: number, score: number, highSensoryScoreThreshold: number): number {
-  return distanceMeters * (1 + score / highSensoryScoreThreshold);
+async function buildDetourCandidates(
+  start: { lat: number; lon: number },
+  end: { lat: number; lon: number },
+  direct: OsrmRoute,
+  worstHotspot: SensorDensity
+): Promise<OsrmRoute[]> {
+  const coords = direct.geometry.coordinates;
+  let nearestIndex = 0;
+  let nearestDist = Infinity;
+  coords.forEach(([lon, lat], i) => {
+    const d = haversineMeters(lat, lon, worstHotspot.latitude, worstHotspot.longitude);
+    if (d < nearestDist) {
+      nearestDist = d;
+      nearestIndex = i;
+    }
+  });
+
+  const prevIdx = Math.max(0, nearestIndex - 3);
+  const nextIdx = Math.min(coords.length - 1, nearestIndex + 3);
+  const [lon1, lat1] = coords[prevIdx];
+  const [lon2, lat2] = coords[nextIdx];
+  const routeBearing = bearingBetween(lat1, lon1, lat2, lon2);
+  const [avoidLon, avoidLat] = coords[nearestIndex];
+
+  const bearings = [routeBearing + 90, routeBearing - 90];
+  const combinations = bearings.flatMap((bearing) => DETOUR_OFFSET_METERS.map((offset) => ({ bearing, offset })));
+
+  const candidates = await Promise.all(
+    combinations.map(async ({ bearing, offset }) => {
+      const waypoint = destinationPoint(avoidLat, avoidLon, bearing, offset);
+      const route = await getRouteViaWaypoint(start, waypoint, end);
+      if (!route) return null;
+      if (route.distanceMeters > direct.distanceMeters * DETOUR_GENERATION_CAP_RATIO) return null;
+      return route;
+    })
+  );
+
+  return candidates.filter((r): r is OsrmRoute => r !== null);
 }
 
 /**
@@ -74,20 +122,21 @@ function combinedCost(distanceMeters: number, score: number, highSensoryScoreThr
  * tiers were calibrated).
  *
  * Weighting approach: OSRM supplies up to a few geometrically distinct alternatives for the
- * walking profile; each is scored as distance x (1 + relative sensory load) via
- * combinedCost() above, and the lowest-cost alternative is offered as "quietest". Because the
- * relative-load term is normalised against the caller's own sensitivity threshold, sensitivity
- * doesn't just relabel a fixed pick - it can change *which* alternative wins: at "high"
- * sensitivity the algorithm will trade more distance for a quieter path than it would at "low".
- * This approximates the spec's Dijkstra-over-weighted-edges approach without requiring a
- * self-hosted OSRM instance with custom edge weights.
+ * walking profile (plus manufactured detour candidates when it doesn't - see
+ * buildDetourCandidates above); "quietest" is the lowest-crowd-score candidate whose distance
+ * fits within the caller's sensitivity-scaled detour budget (config/sensitivity.ts
+ * DETOUR_BUDGET_RATIO), not a blended distance+crowd cost - blending let distance dominate in
+ * practice and made quietest pick the same path as fastest almost every time, even when a
+ * genuinely quieter-but-longer option existed. Sensitivity changes *which* candidate wins by
+ * changing how much extra distance is on the table: "high" will spend up to 70% more distance
+ * to find calm streets, "low" only takes a detour that's barely any longer.
  */
 export async function planDualRoutes(
   start: { lat: number; lon: number },
   end: { lat: number; lon: number },
   sensitivity: SensitivityLevel = DEFAULT_SENSITIVITY
 ): Promise<DualRouteResult> {
-  const { crowdAlertThreshold, highSensoryScoreThreshold } = thresholdsFor(sensitivity);
+  const { crowdAlertThreshold, highSensoryScoreThreshold, detourBudgetRatio } = thresholdsFor(sensitivity);
 
   const [alternatives, densities] = await Promise.all([
     getRouteAlternatives(start, end),
@@ -101,14 +150,34 @@ export async function planDualRoutes(
     score: scoreRouteSensoryLoad(r.geometry.coordinates, densities).score,
   }));
 
+  if (baseAlternatives.length === 1) {
+    const direct = baseAlternatives[0];
+    const { hotspots } = scoreRouteSensoryLoad(direct.geometry.coordinates, densities);
+    const worstHotspot = hotspots.reduce<SensorDensity | null>(
+      (worst, h) => (!worst || h.count > worst.count ? h : worst),
+      null
+    );
+    if (worstHotspot) {
+      const detours = await buildDetourCandidates(start, end, direct, worstHotspot);
+      for (const d of detours) {
+        scored.push({ raw: d, score: scoreRouteSensoryLoad(d.geometry.coordinates, densities).score });
+      }
+    }
+  }
+
   const fastestEntry = scored.reduce((a, b) => (a.raw.durationSeconds <= b.raw.durationSeconds ? a : b));
   const fastestRaw = fastestEntry.raw;
-  const quietestEntry = scored.reduce((a, b) => {
-    const costA = combinedCost(a.raw.distanceMeters, a.score, highSensoryScoreThreshold);
-    const costB = combinedCost(b.raw.distanceMeters, b.score, highSensoryScoreThreshold);
-    return costA <= costB ? a : b;
+
+  // Quietest = lowest crowd score among candidates that fit the sensitivity-scaled detour
+  // budget - always includes at least the direct/fastest route itself (ratio 1 <= any budget),
+  // so this is never empty.
+  const detourLimit = fastestRaw.distanceMeters * detourBudgetRatio;
+  const withinBudget = scored.filter((s) => s.raw.distanceMeters <= detourLimit);
+  const quietestEntry = withinBudget.reduce((a, b) => {
+    if (a.score !== b.score) return a.score <= b.score ? a : b;
+    return a.raw.distanceMeters <= b.raw.distanceMeters ? a : b;
   });
-  const quietestCandidateRaw = baseAlternatives.length > 1 ? quietestEntry.raw : fastestRaw;
+  const quietestCandidateRaw = quietestEntry.raw;
 
   const fastest = toScoredRoute("fastest", fastestRaw, densities, highSensoryScoreThreshold);
   const quietest = toScoredRoute("quietest", quietestCandidateRaw, densities, highSensoryScoreThreshold);
@@ -127,10 +196,10 @@ export async function planDualRoutes(
     fastest,
     quietest,
     crowdAlert,
-    identicalPaths:
-      baseAlternatives.length <= 1 ||
-      (fastestRaw.geometry.coordinates.length === quietestCandidateRaw.geometry.coordinates.length &&
-        fastestRaw.distanceMeters === quietestCandidateRaw.distanceMeters),
+    // Reference equality, not a distance/point-count comparison: quietestCandidateRaw is always
+    // one of the actual objects in `scored` (the direct route, or a manufactured detour), so
+    // this is exact rather than a coincidence-prone approximation.
+    identicalPaths: fastestRaw === quietestCandidateRaw,
     sensitivity,
   };
 }

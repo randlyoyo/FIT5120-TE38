@@ -18,6 +18,11 @@ import type {
 
 const HEATMAP_REFRESH_MS = 60_000;
 const PREDICTIVE_REFRESH_MS = 90_000;
+// Matches the backend's cache TTL for /api/spaces and /api/spaces/sensors (cacheService.ts) -
+// sensor/quiet-space markers were previously fetched once on mount and never refreshed, so any
+// change to sensor status or landmark data server-side would silently never reach an
+// already-open tab for the rest of the session.
+const SENSORS_REFRESH_MS = 300_000;
 const ROUTE_RECHECK_MS = 90_000; // US 1.3: re-check conditions along the active route periodically
 const SENSITIVITY_STORAGE_KEY = "sensory-nav:sensitivity";
 
@@ -110,6 +115,14 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     const id = setInterval(() => {
       fetchHeatmap().then(setHeatmapPoints).catch(() => {});
     }, HEATMAP_REFRESH_MS);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetchSensors().then(setSensors).catch(() => {});
+      fetchQuietSpaces().then(setQuietSpaces).catch(() => {});
+    }, SENSORS_REFRESH_MS);
     return () => clearInterval(id);
   }, []);
 

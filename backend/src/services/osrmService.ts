@@ -45,3 +45,39 @@ export async function getRouteAlternatives(
     steps: (r.legs ?? []).flatMap((leg: any) => leg.steps ?? []),
   }));
 }
+
+/**
+ * Fetches a single walking route forced through an intermediate waypoint (a real detour, not
+ * an "alternative" - OSRM treats every non-endpoint coordinate as mandatory). Used to manufacture
+ * a genuinely different "quietest" candidate when the demo server's alternatives=true comes back
+ * with only one route, which it very often does for Melbourne's grid-like CBD streets. Returns
+ * null (rather than throwing) on any failure, since this is a best-effort extra candidate, not
+ * a required part of the response.
+ */
+export async function getRouteViaWaypoint(
+  start: { lat: number; lon: number },
+  via: { lat: number; lon: number },
+  end: { lat: number; lon: number }
+): Promise<OsrmRoute | null> {
+  const coords = `${start.lon},${start.lat};${via.lon},${via.lat};${end.lon},${end.lat}`;
+  const url = `${OSRM_BASE_URL}/route/v1/foot/${coords}`;
+
+  try {
+    const { data } = await axios.get(url, {
+      params: { overview: "full", geometries: "geojson", steps: true },
+      timeout: 8000,
+    });
+
+    if (data.code !== "Ok" || !Array.isArray(data.routes) || data.routes.length === 0) return null;
+
+    const r = data.routes[0];
+    return {
+      distanceMeters: r.distance,
+      durationSeconds: r.duration,
+      geometry: r.geometry,
+      steps: (r.legs ?? []).flatMap((leg: any) => leg.steps ?? []),
+    };
+  } catch {
+    return null;
+  }
+}

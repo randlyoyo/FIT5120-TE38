@@ -21,8 +21,22 @@ export const SENSITIVITY_THRESHOLDS: Record<SensitivityLevel, number> = {
 export const DEFAULT_SENSITIVITY: SensitivityLevel = "medium";
 
 // Cumulative route sensory-score threshold scales with the per-sensor alert threshold, since a
-// route's score sums proximity-weighted counts across every sensor it passes near.
+// route's score sums proximity-weighted counts along every sensor it passes near.
 const ROUTE_SCORE_MULTIPLIER = 1.5;
+
+/**
+ * How much extra distance "quietest" may spend to find a genuinely quieter path, as a multiple
+ * of the fastest route's distance - the more sensitive the user, the more detour they're willing
+ * to walk to avoid crowds. Without this budget, "quietest" has no way to actually prefer a
+ * longer-but-calmer street over a shorter-but-busier one; with it, routingService picks the
+ * lowest-crowd-score candidate within budget instead of blending distance and crowd into one
+ * number (which in practice let distance dominate and made quietest == fastest almost always).
+ */
+export const DETOUR_BUDGET_RATIO: Record<SensitivityLevel, number> = {
+  high: 1.7, // will walk up to 70% further to find a quieter route
+  medium: 1.35,
+  low: 1.15, // only takes a quieter route if it's barely any longer
+};
 
 export function resolveSensitivity(input: unknown): SensitivityLevel {
   return input === "low" || input === "medium" || input === "high" ? input : DEFAULT_SENSITIVITY;
@@ -33,5 +47,6 @@ export function thresholdsFor(level: SensitivityLevel) {
   return {
     crowdAlertThreshold,
     highSensoryScoreThreshold: Math.round(crowdAlertThreshold * ROUTE_SCORE_MULTIPLIER),
+    detourBudgetRatio: DETOUR_BUDGET_RATIO[level],
   };
 }

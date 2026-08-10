@@ -18,11 +18,13 @@ interface Props {
 }
 
 function findHeatmapPoint(heatmapPoints: HeatmapPoint[], sensor: Sensor): HeatmapPoint | undefined {
-  return heatmapPoints.find((p) => Math.abs(p.lat - sensor.latitude) < 0.0005 && Math.abs(p.lon - sensor.longitude) < 0.0005);
+  return heatmapPoints.find((p) => p.locationId === sensor.locationId);
 }
 
+// No matching reading (sensor missing from /api/heatmap) is "unknown", not "worst case" -
+// must not be conflated with a real high-intensity red reading.
 function getSensorColor(point: HeatmapPoint | undefined): string {
-  if (!point) return "#dc2626";
+  if (!point) return "#9ca3af";
   const intensity = point.intensity;
   if (intensity >= 0.75) return "#dc2626";
   if (intensity >= 0.45) return "#f59e0b";
@@ -64,7 +66,7 @@ export function MarkersLayer({ sensors, quietSpaces, showSensors, heatmapPoints 
               key={`sensor-${s.locationId}`}
               position={[s.latitude, s.longitude]}
               icon={sensorIcon}
-              opacity={point?.dataQuality === "stale" ? 0.6 : 1}
+              opacity={!point || point.dataQuality === "stale" ? 0.6 : 1}
             >
               <Popup>
                 <strong>{s.sensorName}</strong>

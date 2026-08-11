@@ -9,8 +9,8 @@ function severityClass(intensity: number): string {
   return "green";
 }
 
-// 说明.md: live -> show as-is, stale -> grey + "last updated HH:MM", no_live_data -> "estimated" -
-// never present a stale/estimated reading as if it were live.
+// live -> show as-is, stale -> "last updated HH:MM", no_live_data -> "estimated" - the label text
+// still discloses data quality, just without the dimmed/muted row styling.
 function dataQualityLabel(dataQuality: "live" | "stale" | "no_live_data", lastReadingTs: string | null): string {
   if (dataQuality === "live") return "(latest reading)";
   if (dataQuality === "stale") {
@@ -63,10 +63,7 @@ export function AlertsPage() {
         <h3 className="section-title">Busiest right now</h3>
         <ul className="place-list">
           {busiestNow.map((p) => (
-            <li
-              key={p.locationId}
-              className={`place-list-item${p.dataQuality === "stale" ? " place-list-item-muted" : ""}`}
-            >
+            <li key={p.locationId} className="place-list-item">
               <span className={`severity-dot ${severityClass(p.intensity)}`} />
               <div className="place-list-body">
                 <div className="place-list-title">{p.sensorName}</div>

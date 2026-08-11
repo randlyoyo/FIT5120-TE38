@@ -9,8 +9,18 @@ import { MapView } from "./MapView";
 // Persistent map layer shown behind every panel (mobile: full-screen on the Map tab and hidden
 // elsewhere via CSS; desktop: always visible next to the docked side panel, like a real map app).
 export function MapCanvas() {
-  const { showHeatmap, setShowHeatmap, showSensors, setShowSensors, routes, crowdAlertMessage, clearCrowdAlert, pickMode } =
-    useAppState();
+  const {
+    showHeatmap,
+    setShowHeatmap,
+    showSensors,
+    setShowSensors,
+    routes,
+    crowdAlertMessage,
+    clearCrowdAlert,
+    initError,
+    clearInitError,
+    pickMode,
+  } = useAppState();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -66,6 +76,7 @@ export function MapCanvas() {
       )}
 
       <AlertBanner message={crowdAlertMessage} tone="warning" onDismiss={clearCrowdAlert} />
+      <AlertBanner message={initError} tone="warning" onDismiss={clearInitError} />
     </div>
   );
 }

@@ -39,6 +39,7 @@ interface AppState {
   heatmapPoints: HeatmapPoint[];
   predictiveAlerts: PredictiveAlert[];
   initError: string | null;
+  clearInitError: () => void;
 
   showHeatmap: boolean;
   setShowHeatmap: (v: boolean) => void;
@@ -101,14 +102,40 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const routesRef = useRef(routes);
   routesRef.current = routes;
 
+  // Each feed loads independently (not Promise.all) so one endpoint failing doesn't leave the
+  // other two stuck at their empty initial state. Neon (see README) suspends the DB after a few
+  // idle minutes, so the very first request after that can fail while it wakes up even though a
+  // retry moments later succeeds - one retry after a short delay covers that case instead of
+  // leaving the page empty until the next scheduled refresh (up to 5 minutes away) or a manual reload.
   useEffect(() => {
-    Promise.all([fetchSensors(), fetchQuietSpaces(), fetchHeatmap()])
-      .then(([s, q, h]) => {
-        setSensors(s);
-        setQuietSpaces(q);
-        setHeatmapPoints(h);
-      })
-      .catch((err) => setInitError(`Failed to reach backend API: ${err.message}`));
+    let cancelled = false;
+
+    function loadWithRetry<T>(fetcher: () => Promise<T>, setter: (v: T) => void) {
+      fetcher()
+        .then((data) => {
+          if (!cancelled) setter(data);
+        })
+        .catch(() => {
+          setTimeout(() => {
+            if (cancelled) return;
+            fetcher()
+              .then((data) => {
+                if (!cancelled) setter(data);
+              })
+              .catch((err) => {
+                if (!cancelled) setInitError(`Failed to reach backend API: ${err.message}`);
+              });
+          }, 4000);
+        });
+    }
+
+    loadWithRetry(fetchSensors, setSensors);
+    loadWithRetry(fetchQuietSpaces, setQuietSpaces);
+    loadWithRetry(fetchHeatmap, setHeatmapPoints);
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -230,6 +257,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     heatmapPoints,
     predictiveAlerts,
     initError,
+    clearInitError: () => setInitError(null),
     showHeatmap,
     setShowHeatmap,
     showSensors,

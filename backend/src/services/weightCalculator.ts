@@ -63,10 +63,18 @@ export function normalizeDensities(densities: SensorDensity[]): Map<number, numb
 }
 
 /**
- * Scores a route (array of [lon, lat] coordinates) by summing the pedestrian
- * density of every sensor within SENSOR_RADIUS_M of any point on the route,
- * weighted by inverse distance. Used to rank OSRM route alternatives by
- * "quietness" per spec section 3.3 (distance x (1 + normalised density) weighting).
+ * Scores a route (array of [lon, lat] coordinates) by summing the pedestrian density of every
+ * sensor within sensorRadiusM of the route's *closest approach*, weighted by that closest
+ * distance. Used to rank OSRM route alternatives by "quietness" per spec section 3.3 (distance x
+ * (1 + normalised density) weighting).
+ *
+ * Each sensor contributes at most once, via its single nearest point on the route - not once per
+ * nearby polyline vertex. OSRM's `overview=full` geometry is dense (a vertex roughly every
+ * 15-20m), so a sensor within the radius is typically close to several consecutive vertices;
+ * summing across all of them previously inflated scores ~5-10x per sensor and scaled with how
+ * many vertices a route happens to have, which systematically penalised longer "quietest" detour
+ * candidates for their vertex count rather than their actual crowd exposure - collapsing
+ * "quietest" back to "fastest" far more often than the crowd data warranted.
  */
 export function scoreRouteSensoryLoad(
   routeCoords: [number, number][],
@@ -76,20 +84,18 @@ export function scoreRouteSensoryLoad(
   let score = 0;
   let maxSensorCount = 0;
   const hotspots: SensorDensity[] = [];
-  const seen = new Set<number>();
 
-  for (const [lon, lat] of routeCoords) {
-    for (const d of densities) {
+  for (const d of densities) {
+    let minDist = Infinity;
+    for (const [lon, lat] of routeCoords) {
       const dist = haversineMeters(lat, lon, d.latitude, d.longitude);
-      if (dist <= sensorRadiusM) {
-        const proximityWeight = 1 - dist / sensorRadiusM;
-        score += d.count * proximityWeight;
-        maxSensorCount = Math.max(maxSensorCount, d.count);
-        if (!seen.has(d.locationId)) {
-          seen.add(d.locationId);
-          hotspots.push(d);
-        }
-      }
+      if (dist < minDist) minDist = dist;
+    }
+    if (minDist <= sensorRadiusM) {
+      const proximityWeight = 1 - minDist / sensorRadiusM;
+      score += d.count * proximityWeight;
+      maxSensorCount = Math.max(maxSensorCount, d.count);
+      hotspots.push(d);
     }
   }
   return { score, maxSensorCount, hotspots };

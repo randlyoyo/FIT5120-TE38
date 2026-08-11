@@ -23,6 +23,18 @@ function ClickToSetPoint({ onPick }: { onPick: (point: LatLon) => void }) {
   return null;
 }
 
+// Flies the map to a point picked from a list row (Busiest right now / Quiet Spaces) - keyed off
+// focusRequestId rather than the point itself so clicking the same row twice in a row still
+// re-triggers the flyTo (two identical LatLon values wouldn't otherwise look like a change).
+function FocusOnPoint({ point, requestId }: { point: LatLon | null; requestId: number }) {
+  const map = useMap();
+  useEffect(() => {
+    if (point) map.flyTo([point.lat, point.lon], 17);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [requestId]);
+  return null;
+}
+
 // Recenters the map on the browser's geolocation - a standalone "where am I" control,
 // distinct from the Navigate panel's "use my location as start point" action.
 function RecenterControl({ userLocation }: { userLocation: UserLocationState | null }) {
@@ -62,8 +74,20 @@ type UserLocationState = {
 
 // Map container: base tiles, sensor/quiet-space markers, heatmap field, dual routes (spec 3.1-3.4).
 export function MapView() {
-  const { sensors, quietSpaces, heatmapPoints, showHeatmap, showSensors, start, end, handleMapPick, routes, predictiveAlerts } =
-    useAppState();
+  const {
+    sensors,
+    quietSpaces,
+    heatmapPoints,
+    showHeatmap,
+    showSensors,
+    start,
+    end,
+    handleMapPick,
+    routes,
+    predictiveAlerts,
+    focusPoint,
+    focusRequestId,
+  } = useAppState();
   const [userLocation, setUserLocation] = useState<UserLocationState | null>(null);
 
   useEffect(() => {
@@ -94,6 +118,7 @@ export function MapView() {
       <ZoomControl position="bottomright" />
       <ClickToSetPoint onPick={handleMapPick} />
       <RecenterControl userLocation={userLocation} />
+      <FocusOnPoint point={focusPoint} requestId={focusRequestId} />
 
       <MarkersLayer sensors={sensors} quietSpaces={quietSpaces} showSensors={showSensors} heatmapPoints={heatmapPoints} />
       <SensoryFieldLayer points={heatmapPoints} visible={showHeatmap} />

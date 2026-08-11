@@ -73,6 +73,14 @@ interface AppState {
 
   crowdAlertMessage: string | null;
   clearCrowdAlert: () => void;
+
+  // Lets list rows (Busiest right now, Quiet Spaces) fly the map to a point without owning any
+  // map/Leaflet code themselves - focusRequestId increments on every call so clicking the same
+  // point twice in a row still re-triggers the fly-to (a plain LatLon object/value comparison
+  // wouldn't, since the second click is a no-op change).
+  focusPoint: LatLon | null;
+  focusRequestId: number;
+  focusOnPoint: (point: LatLon) => void;
 }
 
 const AppStateContext = createContext<AppState | null>(null);
@@ -101,6 +109,13 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [crowdAlertMessage, setCrowdAlertMessage] = useState<string | null>(null);
   const routesRef = useRef(routes);
   routesRef.current = routes;
+
+  const [focusPoint, setFocusPoint] = useState<LatLon | null>(null);
+  const [focusRequestId, setFocusRequestId] = useState(0);
+  const focusOnPoint = useCallback((point: LatLon) => {
+    setFocusPoint(point);
+    setFocusRequestId((id) => id + 1);
+  }, []);
 
   // Each feed loads independently (not Promise.all) so one endpoint failing doesn't leave the
   // other two stuck at their empty initial state. Neon (see README) suspends the DB after a few
@@ -282,6 +297,9 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     dismissRouteUpdate,
     crowdAlertMessage,
     clearCrowdAlert: () => setCrowdAlertMessage(null),
+    focusPoint,
+    focusRequestId,
+    focusOnPoint,
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

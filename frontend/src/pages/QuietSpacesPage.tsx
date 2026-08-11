@@ -1,4 +1,4 @@
-import { BookOpen, Image as ImageIcon, Navigation, Trees } from "lucide-react";
+import { BookOpen, Image as ImageIcon, MapPin, Navigation, Trees } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PanelHeader } from "../components/Layout/PanelHeader";
@@ -10,7 +10,7 @@ const THEME_ICON: Record<string, typeof Trees> = { Library: BookOpen, Park: Tree
 // Quiet Spaces tab (spec 3.4): list view of parks/libraries/galleries as a non-map alternative,
 // with a one-tap "navigate here" shortcut into the Navigate tab.
 export function QuietSpacesPage() {
-  const { quietSpaces, start, setEnd } = useAppState();
+  const { quietSpaces, start, setEnd, focusOnPoint } = useAppState();
   const navigate = useNavigate();
   const [themeFilter, setThemeFilter] = useState<string | null>(null);
 
@@ -69,6 +69,19 @@ export function QuietSpacesPage() {
               </div>
               <button
                 className="secondary-button small"
+                title="Show on map"
+                aria-label={`Show ${space.featureName} on map`}
+                onClick={() => {
+                  focusOnPoint({ lat: space.latitude, lon: space.longitude });
+                  navigate("/");
+                }}
+              >
+                <MapPin size={14} />
+              </button>
+              <button
+                className="secondary-button small"
+                title="Navigate here"
+                aria-label={`Navigate to ${space.featureName}`}
                 onClick={() => {
                   setEnd({ lat: space.latitude, lon: space.longitude }, space.featureName);
                   navigate("/navigate");

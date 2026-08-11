@@ -1,5 +1,6 @@
-import { TrendingUp } from "lucide-react";
+import { MapPin, TrendingUp } from "lucide-react";
 import { useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { PanelHeader } from "../components/Layout/PanelHeader";
 import { useAppState } from "../context/AppStateContext";
 
@@ -25,7 +26,8 @@ function dataQualityLabel(dataQuality: "live" | "stale" | "no_live_data", lastRe
 // Alerts tab (spec 3.5, 3.6): a list-based, non-visual alternative to the map's colour coding -
 // current busiest spots and predictive "will get busy soon" alerts.
 export function AlertsPage() {
-  const { predictiveAlerts, heatmapPoints } = useAppState();
+  const { predictiveAlerts, heatmapPoints, focusOnPoint } = useAppState();
+  const navigate = useNavigate();
 
   const busiestNow = useMemo(
     () => [...heatmapPoints].sort((a, b) => b.count - a.count).slice(0, 8),
@@ -71,6 +73,17 @@ export function AlertsPage() {
                   {p.count} pedestrians {dataQualityLabel(p.dataQuality, p.lastReadingTs)}
                 </div>
               </div>
+              <button
+                className="secondary-button small"
+                title="Show on map"
+                aria-label={`Show ${p.sensorName} on map`}
+                onClick={() => {
+                  focusOnPoint({ lat: p.lat, lon: p.lon });
+                  navigate("/");
+                }}
+              >
+                <MapPin size={14} />
+              </button>
             </li>
           ))}
         </ul>

@@ -35,6 +35,27 @@ function FocusOnPoint({ point, requestId }: { point: LatLon | null; requestId: n
   return null;
 }
 
+// Leaflet caches its container's pixel size at init and only recomputes it in response to its
+// own events (load, its own resize listener on `window`) - it has no way to notice a CSS-driven
+// resize of its container, like the side panel's width transition on desktop (see AppShell.tsx
+// panel/panel-empty) or the mobile panel overlay toggling. Without this, switching to/from the
+// Map tab leaves the map still sized for whatever width it had before, so the newly revealed
+// strip renders as blank space - no tiles, no markers, no heatmap - until something else (e.g.
+// a manual window resize) happens to trigger a recompute. A ResizeObserver on the map's own
+// container element catches every resize regardless of cause and tells Leaflet to recompute.
+function MapResizeObserver() {
+  const map = useMap();
+  useEffect(() => {
+    const container = map.getContainer();
+    const observer = new ResizeObserver(() => {
+      map.invalidateSize();
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [map]);
+  return null;
+}
+
 // Recenters the map on the browser's geolocation - a standalone "where am I" control,
 // distinct from the Navigate panel's "use my location as start point" action.
 function RecenterControl({ userLocation }: { userLocation: UserLocationState | null }) {
@@ -116,6 +137,7 @@ export function MapView() {
       />
 
       <ZoomControl position="bottomright" />
+      <MapResizeObserver />
       <ClickToSetPoint onPick={handleMapPick} />
       <RecenterControl userLocation={userLocation} />
       <FocusOnPoint point={focusPoint} requestId={focusRequestId} />

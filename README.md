@@ -13,7 +13,7 @@ by avoiding high-pedestrian-density corridors, built for FIT5120 Onboarding (UNS
 - Map of Melbourne CBD with sensor + quiet-space markers, search-as-you-type place lookup (Nominatim), "use my location", or tap-to-set A/B points
 - Dual-mode routing: fastest vs quietest, quietest scored by real-time pedestrian density along the path, each with a High/Low sensory-load indicator
 - Turn-by-turn walking directions (OSRM step/maneuver data → plain-English instructions)
-- **User-defined crowd-sensitivity threshold** (Low/Medium/High, persisted locally) - calibrated against the real percentile distribution of Melbourne's own pedestrian-count data, not an arbitrary number (see `backend/src/config/sensitivity.ts`)
+- **Crowd threshold calibrated against real data**: set from the real percentile distribution of Melbourne's own pedestrian-count data, not an arbitrary number - what the sensory High/Low label and the crowd alert are evaluated against (see `backend/src/config/sensitivity.ts`)
 - **En-route monitoring**: while a route is active, the app silently re-checks conditions every 90s and offers a one-tap route update if crowding along the current path has gotten worse, or a clearly quieter alternative has appeared
 - Non-blocking crowd-alert toast when the quiet route still crosses a high-density hotspot
 
@@ -93,7 +93,7 @@ build instead:
 
 1. Requests walking-route alternatives (with turn-by-turn steps) from the public OSRM demo server (`router.project-osrm.org`, foot profile).
 2. Scores each alternative by summing nearby sensors' pedestrian counts weighted by proximity.
-3. Returns the lowest-scoring alternative as "quietest" and the shortest-duration one as "fastest", both classified High/Low sensory load against the user's chosen sensitivity tier.
+3. Returns the lowest-scoring alternative as "quietest" and the shortest-duration one as "fastest", both classified High/Low sensory load against the app's crowd threshold.
 
 This satisfies the same user-facing behaviour (dual routes, sensory High/Low indicator, crowd
 alert, turn-by-turn directions) without depending on a self-hosted routing engine. `OSRM_BASE_URL`

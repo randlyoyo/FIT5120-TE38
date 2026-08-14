@@ -1,12 +1,11 @@
 import axios from "axios";
 import type {
-  DualRouteResult,
   HeatmapPoint,
   LatLon,
   PredictiveAlert,
   QuietSpace,
+  RoutePlanResult,
   Sensor,
-  SensitivityLevel,
 } from "../types";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:4000/api";
@@ -28,18 +27,13 @@ export async function fetchHeatmap(): Promise<HeatmapPoint[]> {
   return data;
 }
 
-export async function fetchDualRoutes(
-  start: LatLon,
-  end: LatLon,
-  sensitivity: SensitivityLevel
-): Promise<DualRouteResult> {
-  const { data } = await client.get<DualRouteResult>("/route", {
+export async function fetchRoutes(start: LatLon, end: LatLon): Promise<RoutePlanResult> {
+  const { data } = await client.get<RoutePlanResult>("/route", {
     params: {
       startLat: start.lat,
       startLon: start.lon,
       endLat: end.lat,
       endLon: end.lon,
-      sensitivity,
     },
   });
   return data;

@@ -6,8 +6,8 @@ const TIER_LABEL: Record<NoiseTier, string> = {
   loud: "Loud",
 };
 
-// 100 = exactly the user's chosen sensitivity threshold (see backend routingService.ts
-// noiseScore) - below it reads calm/moderate, at or past it reads loud.
+// 100 = exactly the app's crowd threshold (see backend routingService.ts noiseScore) - below it
+// reads calm/moderate, at or past it reads loud.
 function noiseTier(noiseScore: number): NoiseTier {
   if (noiseScore < 50) return "calm";
   if (noiseScore < 100) return "moderate";
@@ -23,7 +23,7 @@ export function NoiseBadge({ noiseScore }: Props) {
   return (
     <span
       className={`noise-badge ${tier}`}
-      title={`Noise score ${noiseScore} — 100 is your current sensitivity threshold`}
+      title={`Noise score ${noiseScore} — 100 is the app's crowd threshold`}
     >
       {noiseScore} <span className="noise-badge-label">{TIER_LABEL[tier]}</span>
     </span>

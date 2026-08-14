@@ -73,7 +73,7 @@ export function QuietSpacesPage() {
                 aria-label={`Show ${space.featureName} on map`}
                 onClick={() => {
                   focusOnPoint({ lat: space.latitude, lon: space.longitude });
-                  navigate("/");
+                  navigate("/map");
                 }}
               >
                 <MapPin size={14} />

@@ -79,7 +79,7 @@ export function AlertsPage() {
                 aria-label={`Show ${p.sensorName} on map`}
                 onClick={() => {
                   focusOnPoint({ lat: p.lat, lon: p.lon });
-                  navigate("/");
+                  navigate("/map");
                 }}
               >
                 <MapPin size={14} />

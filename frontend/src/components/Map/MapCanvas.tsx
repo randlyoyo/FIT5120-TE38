@@ -30,7 +30,7 @@ export function MapCanvas() {
   // on an empty map tab.
   const prevPickMode = useRef(pickMode);
   useEffect(() => {
-    if (prevPickMode.current && !pickMode && location.pathname === "/") {
+    if (prevPickMode.current && !pickMode && location.pathname === "/map") {
       navigate("/navigate");
     }
     prevPickMode.current = pickMode;

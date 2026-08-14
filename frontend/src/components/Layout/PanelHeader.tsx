@@ -11,7 +11,7 @@ export function PanelHeader({ title }: Props) {
   return (
     <div className="panel-header">
       <h2>{title}</h2>
-      <button className="panel-close" onClick={() => navigate("/")} aria-label="Close">
+      <button className="panel-close" onClick={() => navigate("/map")} aria-label="Close">
         <X size={18} />
       </button>
     </div>

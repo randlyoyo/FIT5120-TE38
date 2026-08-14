@@ -1,4 +1,4 @@
-import { Bell, Info, Map, Navigation, Trees } from "lucide-react";
+import { Bell, Home, Info, Map, Navigation, Trees } from "lucide-react";
 
 export interface NavItem {
   to: string;
@@ -8,7 +8,8 @@ export interface NavItem {
 }
 
 export const NAV_ITEMS: NavItem[] = [
-  { to: "/", label: "Map", icon: Map, end: true },
+  { to: "/", label: "Home", icon: Home, end: true },
+  { to: "/map", label: "Map", icon: Map, end: true },
   { to: "/navigate", label: "Navigate", icon: Navigation },
   { to: "/quiet-spaces", label: "Quiet Spaces", icon: Trees },
   { to: "/alerts", label: "Alerts", icon: Bell },

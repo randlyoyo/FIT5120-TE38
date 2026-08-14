@@ -8,7 +8,7 @@ import { NavRail } from "./NavRail";
 // - Mobile: bottom tab bar + the panel shown full-screen over the map (map-only when on "/").
 export function AppShell() {
   const { pathname } = useLocation();
-  const isMapOnly = pathname === "/";
+  const isMapOnly = pathname === "/map";
 
   return (
     <div className="app-shell">

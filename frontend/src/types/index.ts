@@ -57,28 +57,27 @@ export interface NavigationStep {
   location: [number, number];
 }
 
+export type RouteMode = "fastest" | "quietest";
+
 export interface ScoredRoute {
-  mode: "fastest" | "quietest";
+  mode: RouteMode;
   distanceMeters: number;
   durationSeconds: number;
   geometry: { type: "LineString"; coordinates: [number, number][] };
   sensoryScore: number;
   sensoryLevel: SensoryLevel;
-  // sensoryScore as a % of the user's sensitivity threshold - 100 = right at their "High" cutoff.
+  // sensoryScore as a % of the app's crowd threshold - 100 = right at the "High" cutoff.
   // Uncapped, so two "High" routes stay distinguishable (e.g. 240 vs 110).
   noiseScore: number;
   hotspots: SensorHotspot[];
   steps: NavigationStep[];
 }
 
-export type SensitivityLevel = "low" | "medium" | "high";
-
-export interface DualRouteResult {
+export interface RoutePlanResult {
   fastest: ScoredRoute;
   quietest: ScoredRoute;
   crowdAlert: { triggered: boolean; message?: string; hotspots: SensorHotspot[] };
   identicalPaths: boolean;
-  sensitivity: SensitivityLevel;
 }
 
 export interface PredictiveAlert {

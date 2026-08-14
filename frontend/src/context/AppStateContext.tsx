@@ -1,19 +1,18 @@
 import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
-  fetchDualRoutes,
   fetchHeatmap,
   fetchPredictiveAlerts,
   fetchQuietSpaces,
+  fetchRoutes,
   fetchSensors,
 } from "../services/api";
 import type {
-  DualRouteResult,
   HeatmapPoint,
   LatLon,
   PredictiveAlert,
   QuietSpace,
+  RoutePlanResult,
   Sensor,
-  SensitivityLevel,
 } from "../types";
 
 const HEATMAP_REFRESH_MS = 60_000;
@@ -24,14 +23,8 @@ const PREDICTIVE_REFRESH_MS = 90_000;
 // already-open tab for the rest of the session.
 const SENSORS_REFRESH_MS = 300_000;
 const ROUTE_RECHECK_MS = 90_000; // US 1.3: re-check conditions along the active route periodically
-const SENSITIVITY_STORAGE_KEY = "sensory-nav:sensitivity";
 
 export type PickMode = "start" | "end" | null;
-
-function loadStoredSensitivity(): SensitivityLevel {
-  const stored = localStorage.getItem(SENSITIVITY_STORAGE_KEY);
-  return stored === "low" || stored === "medium" || stored === "high" ? stored : "medium";
-}
 
 interface AppState {
   sensors: Sensor[];
@@ -46,9 +39,6 @@ interface AppState {
   showSensors: boolean;
   setShowSensors: (v: boolean) => void;
 
-  sensitivity: SensitivityLevel;
-  setSensitivity: (level: SensitivityLevel) => void;
-
   start: LatLon | null;
   end: LatLon | null;
   startLabel: string;
@@ -59,7 +49,7 @@ interface AppState {
   setPickMode: (mode: PickMode) => void;
   handleMapPick: (point: LatLon) => void;
 
-  routes: DualRouteResult | null;
+  routes: RoutePlanResult | null;
   planning: boolean;
   routeError: string | null;
   planRoute: () => Promise<void>;
@@ -67,7 +57,7 @@ interface AppState {
   // US 1.3: while a route is active, we silently re-check conditions and offer a swap if
   // crowding along the current quietest route has gotten worse (or a clearly better
   // alternative appears) - never auto-swap the user's route out from under them.
-  routeUpdateAvailable: DualRouteResult | null;
+  routeUpdateAvailable: RoutePlanResult | null;
   acceptRouteUpdate: () => void;
   dismissRouteUpdate: () => void;
 
@@ -94,7 +84,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showSensors, setShowSensors] = useState(true);
-  const [sensitivity, setSensitivityState] = useState<SensitivityLevel>(loadStoredSensitivity);
 
   const [start, setStartPoint] = useState<LatLon | null>(null);
   const [end, setEndPoint] = useState<LatLon | null>(null);
@@ -102,10 +91,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
   const [endLabel, setEndLabel] = useState("");
   const [pickMode, setPickMode] = useState<PickMode>(null);
 
-  const [routes, setRoutes] = useState<DualRouteResult | null>(null);
+  const [routes, setRoutes] = useState<RoutePlanResult | null>(null);
   const [planning, setPlanning] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
-  const [routeUpdateAvailable, setRouteUpdateAvailable] = useState<DualRouteResult | null>(null);
+  const [routeUpdateAvailable, setRouteUpdateAvailable] = useState<RoutePlanResult | null>(null);
   const [crowdAlertMessage, setCrowdAlertMessage] = useState<string | null>(null);
   const routesRef = useRef(routes);
   routesRef.current = routes;
@@ -175,11 +164,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(id);
   }, []);
 
-  const setSensitivity = useCallback((level: SensitivityLevel) => {
-    setSensitivityState(level);
-    localStorage.setItem(SENSITIVITY_STORAGE_KEY, level);
-  }, []);
-
   const setStart = useCallback((point: LatLon | null, label = "") => {
     setStartPoint(point);
     setStartLabel(label);
@@ -214,7 +198,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setCrowdAlertMessage(null);
     setRouteUpdateAvailable(null);
     try {
-      const result = await fetchDualRoutes(start, end, sensitivity);
+      const result = await fetchRoutes(start, end);
       setRoutes(result);
       if (result.crowdAlert.triggered && result.crowdAlert.message) {
         setCrowdAlertMessage(result.crowdAlert.message);
@@ -224,7 +208,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     } finally {
       setPlanning(false);
     }
-  }, [start, end, sensitivity]);
+  }, [start, end]);
 
   // En-route monitoring (US 1.3): while a route is active, periodically re-plan silently in the
   // background and flag it for the user if conditions along the current route got worse.
@@ -235,7 +219,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       const current = routesRef.current;
       if (!current) return;
       try {
-        const candidate = await fetchDualRoutes(start, end, sensitivity);
+        const candidate = await fetchRoutes(start, end);
         const gotMoreCrowded = candidate.crowdAlert.triggered && !current.crowdAlert.triggered;
         const flippedToHigh = candidate.quietest.sensoryLevel === "High" && current.quietest.sensoryLevel === "Low";
         const meaningfullyBetterPath =
@@ -251,7 +235,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     }, ROUTE_RECHECK_MS);
 
     return () => clearInterval(id);
-  }, [routes !== null, start, end, sensitivity]);
+  }, [routes !== null, start, end]);
 
   const acceptRouteUpdate = useCallback(() => {
     setRouteUpdateAvailable((pending) => {
@@ -277,8 +261,6 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     setShowHeatmap,
     showSensors,
     setShowSensors,
-    sensitivity,
-    setSensitivity,
     start,
     end,
     startLabel,

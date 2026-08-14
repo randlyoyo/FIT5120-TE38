@@ -2,11 +2,11 @@ import { AlertCircle, LocateFixed, MapPinPlus, Navigation } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAppState } from "../../context/AppStateContext";
+import type { RouteMode } from "../../types";
 import { LoadingSpinner } from "../common/LoadingSpinner";
 import { DirectionsList } from "./DirectionsList";
 import { NoiseBadge } from "./NoiseBadge";
 import { PlaceAutocomplete } from "./PlaceAutocomplete";
-import { SensitivitySelector } from "./SensitivitySelector";
 
 // Search-based A/B navigation panel (spec 3.1, 3.3): type-ahead place search like a real map
 // app, "use my location", plan trigger, and turn-by-turn directions for the chosen route.
@@ -33,7 +33,7 @@ export function RoutePanel() {
   const [startText, setStartText] = useState(startLabel);
   const [endText, setEndText] = useState(endLabel);
   const [locating, setLocating] = useState(false);
-  const [activeDirections, setActiveDirections] = useState<"fastest" | "quietest">("quietest");
+  const [activeDirections, setActiveDirections] = useState<RouteMode>("quietest");
 
   function togglePick(which: "start" | "end") {
     const next = pickMode === which ? null : which;
@@ -43,7 +43,7 @@ export function RoutePanel() {
     // this panel for no reason. On mobile the map is hidden behind this panel (full-screen
     // overlay), so switching to it is the only way to see it; MapCanvas jumps back here once
     // the point is picked.
-    if (next && window.innerWidth < 900) navigate("/");
+    if (next && window.innerWidth < 900) navigate("/map");
   }
 
   function useCurrentLocation() {
@@ -68,8 +68,6 @@ export function RoutePanel() {
 
   return (
     <div className="route-panel">
-      <SensitivitySelector />
-
       <p className="hint">Search for a place, use your location, or pick a point on the map.</p>
 
       <div className="input-row">

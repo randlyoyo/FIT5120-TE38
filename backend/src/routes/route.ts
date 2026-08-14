@@ -1,13 +1,13 @@
 import { Router } from "express";
-import { resolveSensitivity } from "../config/sensitivity";
-import { planDualRoutes } from "../services/routingService";
+import { planRoutes } from "../services/routingService";
 
 export const routeRouter = Router();
 
-// GET /api/route?startLat=&startLon=&endLat=&endLon=&sensitivity=low|medium|high
-// Dual-mode fastest vs quietest route (spec 3.3, 3.5, US 1.3 user-defined crowd threshold).
+// GET /api/route?startLat=&startLon=&endLat=&endLon=
+// Returns fastest/quietest routes (spec 3.3, 3.5) - both evaluated against the app's single
+// default crowd threshold, see routingService.ts planRoutes.
 routeRouter.get("/", async (req, res) => {
-  const { startLat, startLon, endLat, endLon, sensitivity } = req.query;
+  const { startLat, startLon, endLat, endLon } = req.query;
   const nums = [startLat, startLon, endLat, endLon].map(Number);
   if (nums.some((n) => Number.isNaN(n))) {
     return res.status(400).json({ error: "startLat, startLon, endLat, endLon are required numbers" });
@@ -15,11 +15,7 @@ routeRouter.get("/", async (req, res) => {
   const [sLat, sLon, eLat, eLon] = nums;
 
   try {
-    const result = await planDualRoutes(
-      { lat: sLat, lon: sLon },
-      { lat: eLat, lon: eLon },
-      resolveSensitivity(sensitivity)
-    );
+    const result = await planRoutes({ lat: sLat, lon: sLon }, { lat: eLat, lon: eLon });
     res.json(result);
   } catch (err) {
     console.error(err);

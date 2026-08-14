@@ -20,6 +20,8 @@ export function MapCanvas() {
     initError,
     clearInitError,
     pickMode,
+    focusToastMessage,
+    clearFocusToast,
   } = useAppState();
   const navigate = useNavigate();
   const location = useLocation();
@@ -77,6 +79,7 @@ export function MapCanvas() {
 
       <AlertBanner message={crowdAlertMessage} tone="warning" onDismiss={clearCrowdAlert} />
       <AlertBanner message={initError} tone="warning" onDismiss={clearInitError} />
+      <AlertBanner message={focusToastMessage} tone="info" position="bottom" duration={2500} onDismiss={clearFocusToast} />
     </div>
   );
 }

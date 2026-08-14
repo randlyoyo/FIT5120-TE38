@@ -4,11 +4,13 @@ import { useEffect, useState } from "react";
 interface Props {
   message: string | null;
   tone?: "warning" | "info";
+  position?: "top" | "bottom";
+  duration?: number;
   onDismiss?: () => void;
 }
 
 // Non-blocking crowd/predictive alert toast (spec 3.5, 3.6) - auto-dismisses, never blocks map interaction.
-export function AlertBanner({ message, tone = "warning", onDismiss }: Props) {
+export function AlertBanner({ message, tone = "warning", position = "top", duration = 8000, onDismiss }: Props) {
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
@@ -17,16 +19,16 @@ export function AlertBanner({ message, tone = "warning", onDismiss }: Props) {
     const timer = setTimeout(() => {
       setVisible(false);
       onDismiss?.();
-    }, 8000);
+    }, duration);
     return () => clearTimeout(timer);
-  }, [message, onDismiss]);
+  }, [message, duration, onDismiss]);
 
   if (!message || !visible) return null;
 
   const Icon = tone === "warning" ? AlertTriangle : Info;
 
   return (
-    <div className={`alert-banner ${tone}`} role="status">
+    <div className={`alert-banner ${tone} ${position}`} role="status">
       <Icon size={16} />
       <span>{message}</span>
       <button

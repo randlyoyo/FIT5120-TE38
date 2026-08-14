@@ -1,4 +1,4 @@
-import { BookOpen, Image as ImageIcon, MapPin, Navigation, Trees } from "lucide-react";
+import { BookOpen, Image as ImageIcon, Navigation, Trees } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { PanelHeader } from "../components/Layout/PanelHeader";
@@ -51,32 +51,31 @@ export function QuietSpacesPage() {
           const Icon = THEME_ICON[space.theme] ?? Trees;
           return (
             <li key={space.id} className="place-list-item">
-              <span className="place-list-icon">
-                <Icon size={18} />
-              </span>
-              <div className="place-list-body">
-                <div className="place-list-title">{space.featureName}</div>
-                <div className="place-list-sub">
-                  {space.theme}
-                  {space.subTheme ? ` · ${space.subTheme}` : ""}
-                  {space.address ? ` · ${space.address}` : ""}
-                </div>
-                {start && (
-                  <div className="place-list-distance">
-                    {formatDistance(haversineMeters(start, { lat: space.latitude, lon: space.longitude }))} away
-                  </div>
-                )}
-              </div>
               <button
-                className="secondary-button small"
+                className="place-list-row-trigger"
                 title="Show on map"
                 aria-label={`Show ${space.featureName} on map`}
                 onClick={() => {
-                  focusOnPoint({ lat: space.latitude, lon: space.longitude });
+                  focusOnPoint({ lat: space.latitude, lon: space.longitude }, space.featureName);
                   navigate("/map");
                 }}
               >
-                <MapPin size={14} />
+                <span className="place-list-icon">
+                  <Icon size={18} />
+                </span>
+                <div className="place-list-body">
+                  <div className="place-list-title">{space.featureName}</div>
+                  <div className="place-list-sub">
+                    {space.theme}
+                    {space.subTheme ? ` · ${space.subTheme}` : ""}
+                    {space.address ? ` · ${space.address}` : ""}
+                  </div>
+                  {start && (
+                    <div className="place-list-distance">
+                      {formatDistance(haversineMeters(start, { lat: space.latitude, lon: space.longitude }))} away
+                    </div>
+                  )}
+                </div>
               </button>
               <button
                 className="secondary-button small"

@@ -70,7 +70,12 @@ interface AppState {
   // wouldn't, since the second click is a no-op change).
   focusPoint: LatLon | null;
   focusRequestId: number;
-  focusOnPoint: (point: LatLon) => void;
+  // label is optional confirmation-toast text (e.g. a sensor/space name) - the row that
+  // triggered this unmounts almost immediately once the panel switches to the Map tab, so the
+  // toast lives in MapCanvas (which stays mounted) instead of on the row itself.
+  focusOnPoint: (point: LatLon, label?: string) => void;
+  focusToastMessage: string | null;
+  clearFocusToast: () => void;
 }
 
 const AppStateContext = createContext<AppState | null>(null);
@@ -101,9 +106,11 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
 
   const [focusPoint, setFocusPoint] = useState<LatLon | null>(null);
   const [focusRequestId, setFocusRequestId] = useState(0);
-  const focusOnPoint = useCallback((point: LatLon) => {
+  const [focusToastMessage, setFocusToastMessage] = useState<string | null>(null);
+  const focusOnPoint = useCallback((point: LatLon, label?: string) => {
     setFocusPoint(point);
     setFocusRequestId((id) => id + 1);
+    if (label) setFocusToastMessage(`Showing ${label} on the map`);
   }, []);
 
   // Each feed loads independently (not Promise.all) so one endpoint failing doesn't leave the
@@ -282,6 +289,8 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
     focusPoint,
     focusRequestId,
     focusOnPoint,
+    focusToastMessage,
+    clearFocusToast: () => setFocusToastMessage(null),
   };
 
   return <AppStateContext.Provider value={value}>{children}</AppStateContext.Provider>;

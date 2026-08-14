@@ -1,4 +1,4 @@
-import { MapPin, TrendingUp } from "lucide-react";
+import { TrendingUp } from "lucide-react";
 import { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { PanelHeader } from "../components/Layout/PanelHeader";
@@ -66,23 +66,22 @@ export function AlertsPage() {
         <ul className="place-list">
           {busiestNow.map((p) => (
             <li key={p.locationId} className="place-list-item">
-              <span className={`severity-dot ${severityClass(p.intensity)}`} />
-              <div className="place-list-body">
-                <div className="place-list-title">{p.sensorName}</div>
-                <div className="place-list-sub">
-                  {p.count} pedestrians {dataQualityLabel(p.dataQuality, p.lastReadingTs)}
-                </div>
-              </div>
               <button
-                className="secondary-button small"
+                className="place-list-row-trigger"
                 title="Show on map"
                 aria-label={`Show ${p.sensorName} on map`}
                 onClick={() => {
-                  focusOnPoint({ lat: p.lat, lon: p.lon });
+                  focusOnPoint({ lat: p.lat, lon: p.lon }, p.sensorName);
                   navigate("/map");
                 }}
               >
-                <MapPin size={14} />
+                <span className={`severity-dot ${severityClass(p.intensity)}`} />
+                <div className="place-list-body">
+                  <div className="place-list-title">{p.sensorName}</div>
+                  <div className="place-list-sub">
+                    {p.count} pedestrians {dataQualityLabel(p.dataQuality, p.lastReadingTs)}
+                  </div>
+                </div>
               </button>
             </li>
           ))}
